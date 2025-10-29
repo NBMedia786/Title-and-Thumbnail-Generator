@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Title + Thumbnail Idea Generator — Single File (Video-aware)</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{ --bg:#0a0c10; --bg-gradient-start:#0a0c10; --bg-gradient-end:#0d0f14; --panel:#11141a; --panel-2:#0e1116; --text:#e8ecf4; --muted:#8b96a8; --brand:#6ea8ff; --brand-light:#8ec2ff; --accent:#22d3ee; --ok:#10b981; --warn:#f59e0b; --err:#ef4444; --border:#202633; --border-light:#2a3245; --focus:#37a7ff; --fieldbg:#151a23; --shadow-color:rgba(0,0,0,.4); }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0; font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif; background:linear-gradient(170deg,var(--bg-gradient-start),var(--bg-gradient-end)); color:var(--text)}
+  .wrap{max-width:900px; margin:32px auto; padding:0 20px}
+  header{display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:24px}
+  .logo{display:flex; gap:12px; align-items:center; font-weight:800; letter-spacing:.2px; font-size:20px}
+  .logo-badge{width:40px; height:40px; border-radius:12px; background:linear-gradient(135deg,var(--brand),var(--accent)); display:grid; place-items:center; color:var(--bg); font-weight:900; font-size:18px; box-shadow:0 4px 12px rgba(110,168,255,.2)}
+  .sub{color:var(--muted); font-size:13px; margin-top:5px; font-weight:500}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel-2)); border:1px solid var(--border); border-radius:20px; box-shadow:0 10px 32px var(--shadow-color); overflow:hidden}
+  .card header{padding:20px 24px; border-bottom:1px solid var(--border)}
+  .card h3{margin:0; font-size:18px; font-weight:700; display:flex; align-items:center; gap:10px}
+  .card .body{padding:24px}
+  .row{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+  @media (max-width:720px){.row{grid-template-columns:1fr}}
+  .form-group{position:relative}
+  label{display:block; font-size:14px; font-weight:500; color:var(--muted); margin:16px 0 8px}
+  label.required::after{content:"*"; color:var(--err); margin-left:4px}
+  input[type="text"],textarea{width:100%; padding:14px 16px; background:var(--fieldbg); color:var(--text); border:1.5px solid var(--border); border-radius:12px; outline:none; transition:.14s border-color,.14s box-shadow; font-size:15px}
+  input[type]:focus,textarea:focus{border-color:var(--focus); box-shadow:0 0 0 2px var(--focus),0 0 12px rgba(55,167,255,.15)}
+  textarea{min-height:120px; resize:vertical; line-height:1.55}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace; font-size:14px}
+  .btnbar{display:flex; gap:12px; flex-wrap:wrap; margin-top:20px}
+  button{appearance:none; border:none; color:var(--text); background:#202836; padding:12px 18px; border-radius:12px; cursor:pointer; font-weight:600; font-size:15px; display:inline-flex; gap:8px; align-items:center; justify-content:center; line-height:1}
+  .primary{background:linear-gradient(135deg,var(--brand),var(--brand-light)); color:var(--bg)}
+  .ghost{background:transparent; border:1.5px solid var(--border-light)}
+  .pill{border:1px solid var(--border-light); color:var(--muted); padding:6px 10px; border-radius:999px; font-size:12px}
+  .tab-bar{display:flex; gap:6px; border-bottom:1px solid var(--border); margin-bottom:12px}
+  .tab-btn{background:transparent; border:none; color:var(--muted); font-weight:600; font-size:14px; padding:10px 16px; cursor:pointer; border-bottom:2px solid transparent}
+  .tab-btn.active{color:var(--brand-light); border-bottom-color:var(--brand-light)}
+  #localInputContainer{display:none} #videoPreviewContainer{display:none; margin-top:16px} #videoPreview{width:100%; max-height:250px; border-radius:12px; background:#000}
+  .status{margin-top:16px; font-size:14px; color:var(--muted); font-weight:500}
+  .progress{height:10px; width:100%; background:var(--fieldbg); border:1px solid var(--border); border-radius:999px; overflow:hidden}
+  .bar{height:100%; width:0%; background:linear-gradient(90deg,var(--brand),var(--accent)); transition:width .35s ease}
+  .out{white-space:normal; line-height:1.55; color:#eaf0ff; font-size:15px}
+  .out h1,.out h2,.out h3{font-weight:700; color:var(--text)}
+  .out h1{font-size:22px; margin:14px 0 8px}
+  .out h2{font-size:19px; margin:14px 0 8px; border-bottom:1px solid var(--border); padding-bottom:6px}
+  .out h3{font-size:16px; margin:12px 0 6px}
+  .out p{margin:6px 0}
+  .out ul,.out ol{margin:6px 0 6px 18px; padding:0}
+  .out hr{border:none; border-top:1px solid var(--border-light); margin:12px 0}
+  .ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:var(--err)}
+
+  /* Settings sheet (kept from your previous build) */
+  .sheet-backdrop{position:fixed; inset:0; background:rgba(0,0,0,.4); opacity:0; visibility:hidden; transition:.2s}
+  .sheet-backdrop.open{opacity:1; visibility:visible}
+  .sheet{position:fixed; right:0; top:0; bottom:0; width:560px; max-width:100%; background:linear-gradient(180deg,var(--panel),var(--panel-2)); border-left:1px solid var(--border); box-shadow: -10px 0 32px rgba(0,0,0,.35); transform:translateX(100%); transition:.25s; display:flex; flex-direction:column}
+  .sheet.open{transform:translateX(0)}
+  .sheet header{display:flex; align-items:center; justify-content:space-between; gap:12px}
+  .sheet .body{padding:20px 24px; overflow:auto}
+  .dz{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; border:1px dashed var(--border-light); border-radius:12px; background:rgba(21,26,35,.55); margin-top:6px}
+  .dz.over{background:rgba(21,26,35,.8)}
+  .dz .actions{display:flex; gap:8px}
+  .dz .name{color:var(--muted); font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">
+      <div class="logo-badge">AI</div>
+      <div>
+        <div>Title + Thumbnail Idea Generator</div>
+        <div class="sub">Video-aware • Gemini 2.5 Pro • GS saved in browser</div>
+      </div>
+    </div>
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div class="pill" id="gsStatus">GS: not loaded</div>
+      <button id="openSettings" class="ghost">Settings</button>
+    </div>
+  </header>
+
+  <section class="card">
+    <header><h3>Provide Inputs</h3></header>
+    <div class="body">
+      <label>Video Source</label>
+      <div class="tab-bar">
+        <button id="urlBtn" class="tab-btn active">YouTube URL</button>
+        <button id="localBtn" class="tab-btn">Local Video File</button>
+      </div>
+      <div id="urlInputContainer">
+        <div class="form-group" style="margin-top:8px">
+          <input id="ytUrl" type="text" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off"/>
+        </div>
+      </div>
+      <div id="localInputContainer">
+        <input id="videoFile" type="file" accept="video/*"/>
+        <div id="videoPreviewContainer"><video id="videoPreview" controls></video></div>
+      </div>
+
+      <div class="row" style="margin-top:16px">
+        <div>
+          <label for="topic">Optional: Topic / Working Title</label>
+          <input id="topic" type="text" placeholder="e.g., Terrilynne Collins timeline analysis"/>
+        </div>
+        <div>
+          <label for="titleHint">Optional: Angle/Persona Hint</label>
+          <input id="titleHint" type="text" placeholder="e.g., 'Mom reveals horrifying secret on bodycam'"/>
+        </div>
+      </div>
+
+      <label for="contextNotes">Optional: Extra Context / Transcript (improves accuracy)</label>
+      <textarea id="contextNotes" class="mono" placeholder="Paste key facts or transcript snippets (optional)."></textarea>
+
+      <div class="btnbar">
+        <button class="primary" id="runBtn">Generate 10 Packages</button>
+        <button class="ghost" id="copyBtn">Copy Output</button>
+        <!-- NEW -->
+        <button class="ghost" id="saveDocBtn">Download DOCX</button>
+      </div>
+      <div id="status" class="status">Ready.</div>
+      <div class="progress" style="margin-top:10px"><div class="bar" id="bar"></div></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <header><h3>Output</h3></header>
+    <div class="body">
+      <div id="output" class="out" style="min-height:160px">
+        <p class="sub">Run the generator to see your 10 Title + Thumbnail packages here.</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- Settings -->
+<div id="settingsBackdrop" class="sheet-backdrop" aria-hidden="true"></div>
+<aside id="settingsSheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="stitle" aria-hidden="true">
+  <header>
+    <h3 id="stitle" style="margin:0">Configuration</h3>
+    <button id="closeSettings" class="ghost" title="Close">Close</button>
+  </header>
+  <div class="body">
+    <p class="sub" style="margin-top:0">Gold-Standard files are stored locally in this browser and auto-attached to every run.</p>
+
+    <label class="required" for="prompt">Your Strategist Prompt</label>
+    <textarea id="prompt" class="mono" placeholder="Paste your strategist rules. Output=HTML with 10 packages."></textarea>
+
+    <h3 style="margin:18px 0 8px">Gold-Standard Files (upload here only)</h3>
+
+    <label class="required">DATASET.json (patterns/examples)</label>
+    <div class="dz" id="dzJson" tabindex="0">
+      <div class="meta"><strong>DATASET.json</strong> — <small>drag & drop • click to upload • paste JSON</small></div>
+      <div class="actions"><button class="ghost" id="btnPickJson">Upload</button><button class="ghost" id="btnClearJson">Clear</button></div>
+      <input id="gsJson" type="file" accept=".json" style="display:none"/>
+      <div class="name" id="gsJsonName">Not uploaded</div>
+    </div>
+
+    <label class="required" style="margin-top:12px">Top10_Viral_Titles_Thumbnails_AllChannels.csv</label>
+    <div class="dz" id="dzCsv" tabindex="0">
+      <div class="meta"><strong>Top10 CSV</strong> — <small>drag & drop • click to upload</small></div>
+      <div class="actions"><button class="ghost" id="btnPickCsv">Upload</button><button class="ghost" id="btnClearCsv">Clear</button></div>
+      <input id="gsCsv" type="file" accept=".csv" style="display:none"/>
+      <div class="name" id="gsCsvName">Not uploaded</div>
+    </div>
+
+    <label class="required" style="margin-top:12px">Viral_Crime_Niche_Master_Keywords.docx</label>
+    <div class="dz" id="dzDoc" tabindex="0">
+      <div class="meta"><strong>Keywords .docx</strong> — <small>drag & drop • click to upload</small></div>
+      <div class="actions"><button class="ghost" id="btnPickDoc">Upload</button><button class="ghost" id="btnClearDoc">Clear</button></div>
+      <input id="gsDoc" type="file" accept=".docx" style="display:none"/>
+      <div class="name" id="gsDocName">Not uploaded</div>
+    </div>
+
+    <div class="btnbar" style="margin-top:16px">
+      <button id="saveSettings" class="primary">Save All</button>
+      <button id="resetSettings" class="ghost">Reset</button>
+    </div>
+  </div>
+</aside>
+
+<script type="module">
+  import mammoth from "https://esm.run/mammoth@1.7.2";
+  /* NEW */ import * as docx from "https://esm.run/docx@8.5.0";
+
+  // Frontend served at 127.0.0.1:5501; backend runs at 3002
+  const API_BASE = 'http://localhost:3002';
+
+  const $ = (id)=>document.getElementById(id);
+  const els = {
+    runBtn:$("runBtn"), copyBtn:$("copyBtn"),
+    status:$("status"), bar:$("bar"), output:$("output"),
+    ytUrl:$("ytUrl"), topic:$("topic"), titleHint:$("titleHint"), contextNotes:$("contextNotes"),
+    urlBtn:$("urlBtn"), localBtn:$("localBtn"),
+    urlInputContainer:$("urlInputContainer"), localInputContainer:$("localInputContainer"),
+    videoFile:$("videoFile"), videoPreview:$("videoPreview"), videoPreviewContainer:$("videoPreviewContainer"),
+    gsStatus:$("gsStatus"),
+    openSettings:$("openSettings"), closeSettings:$("closeSettings"),
+    settingsBackdrop:$("settingsBackdrop"), settingsSheet:$("settingsSheet"),
+    prompt:$("prompt"),
+    saveSettings:$("saveSettings"), resetSettings:$("resetSettings"),
+    dzJson:$("dzJson"), dzCsv:$("dzCsv"), dzDoc:$("dzDoc"),
+    btnPickJson:$("btnPickJson"), btnPickCsv:$("btnPickCsv"), btnPickDoc:$("btnPickDoc"),
+    btnClearJson:$("btnClearJson"), btnClearCsv:$("btnClearCsv"), btnClearDoc:$("btnClearDoc"),
+    gsJson:$("gsJson"), gsCsv:$("gsCsv"), gsDoc:$("gsDoc"),
+    gsJsonName:$("gsJsonName"), gsCsvName:$("gsCsvName"), gsDocName:$("gsDocName"),
+    /* NEW */ saveDocBtn: $("saveDocBtn"),
+  };
+
+  const LS_KEY="tt_generator_singlefile_settings_v3";
+  const LS_GS_JSON="tt_gen_gs_dataset_json";
+  const LS_GS_CSV ="tt_gen_gs_top10_csv";
+  const LS_GS_DOCX="tt_gen_gs_keywords_docx_b64";
+
+  const hardDefaults={ 
+    prompt:`You are a world-class YouTube strategist with an expert understanding of viral content mechanics.
+    Your Reference Material:
+    You have been provided with a curated list of "gold standard" videos from my niche, including their titles, thumbnails, and master keywords. Your first and most critical task is to internally analyze these successful examples. Identify the recurring patterns that make them perform so well. Pay close attention to:
+
+    Title Structures: What types of questions, statements, or lists do they use?
+    Psychological Hooks: What emotions do they target (curiosity, shock, urgency, etc.)?
+    Thumbnail Composition: What are the common elements? (e.g., human faces with strong emotions, highlighted objects, minimal text, high contrast).
+    Title & Thumbnail Synergy: How do they work together to create an irresistible story or question?
+    Your Primary Goal:
+    Now, analyze the new video content I have provided. Your goal is to apply the winning patterns you just learned from the gold standard examples to create 10 unique, viral-ready "Title & Thumbnail Packages" for my video.
+    Instructions:
+
+    Video Summary & Core Angles: Begin with a brief summary of my video. Then, identify the 3-5 most powerful emotional hooks or narrative angles within it that align with the successful patterns you observed in the reference material.
+    Generate 10 Title & Thumbnail Packages: For each of the 10 packages, provide the following:
+    A Compelling Title: The title must be crafted in the style of the proven examples.
+    A Detailed Thumbnail Concept with accurate timestamps: Describe the perfect thumbnail. Be specific about the visuals, the focus, the emotion it should convey, the color scheme, and any text overlays. This concept should be a powerful visual echo of the successful thumbnails you analyzed.
+    Strategic Justification: This is the most important part. Briefly explain why this specific title and thumbnail combination is effective, directly referencing the patterns and psychological triggers you identified from the gold standard examples provided. Explain how your suggestion creates a powerful "curiosity gap" that will maximize clicks.` };
+
+  const loadSettings=()=>{ try{const s=localStorage.getItem(LS_KEY); return s?JSON.parse(s):null}catch{return null} };
+  const saveSettings=(v)=>{ try{localStorage.setItem(LS_KEY, JSON.stringify(v));}catch{} };
+  const applySettings=({prompt})=>{ if(typeof prompt==="string") els.prompt.value=prompt; };
+
+  function toggleSettings(open){
+    const isOpen=open ?? !els.settingsSheet.classList.contains("open");
+    els.settingsSheet.classList.toggle("open",isOpen);
+    els.settingsBackdrop.classList.toggle("open",isOpen);
+  }
+  els.openSettings.addEventListener("click",()=>toggleSettings(true));
+  els.closeSettings.addEventListener("click",()=>toggleSettings(false));
+  els.settingsBackdrop.addEventListener("click",()=>toggleSettings(false));
+  window.addEventListener("keydown",(e)=>{ if(e.key==="Escape") toggleSettings(false); });
+
+  els.resetSettings.addEventListener("click",()=>{ applySettings(hardDefaults); saveSettings(hardDefaults); setStatus("Settings reset."); });
+  function setStatus(msg){ els.status.innerHTML=msg; }
+  function setProgress(pct,msg){ els.bar.style.width=Math.max(0,Math.min(100,pct))+"%"; if(msg) setStatus(msg); }
+
+  let currentInputMethod="url";
+  function switchInputMethod(method){
+    currentInputMethod=method;
+    if(method==='url'){
+      els.urlBtn.classList.add('active'); els.localBtn.classList.remove('active');
+      els.urlInputContainer.style.display='block'; els.localInputContainer.style.display='none';
+      els.videoPreviewContainer.style.display='none'; els.videoFile.value="";
+    }else{
+      els.localBtn.classList.add('active'); els.urlBtn.classList.remove('active');
+      els.localInputContainer.style.display='block'; els.urlInputContainer.style.display='none';
+    }
+  }
+  els.urlBtn.addEventListener("click",()=>switchInputMethod('url'));
+  els.localBtn.addEventListener("click",()=>switchInputMethod('local'));
+  els.videoFile.addEventListener("change",(e)=>{
+    const f=e.target.files?.[0];
+    if(!f){ els.videoPreviewContainer.style.display='none'; els.videoPreview.removeAttribute('src'); return; }
+    const url=URL.createObjectURL(f); els.videoPreview.src=url; els.videoPreviewContainer.style.display='block';
+  });
+
+  function normalizeHtml(rawHtml){
+    if(!rawHtml) return "";
+    rawHtml=rawHtml.replace(/^```html\s*|```\s*$/g,"").replace(/(\s*<br\s*\/?>\s*){2,}/gi,"<br>");
+    const parser=new DOMParser(); const doc=parser.parseFromString(rawHtml,"text/html");
+    doc.body.querySelectorAll("script,style").forEach(n=>n.remove());
+    return doc.body.innerHTML.trim();
+  }
+
+  async function readAsText(file){ const buf=await file.arrayBuffer(); return new TextDecoder("utf-8").decode(buf); }
+  function readAsBase64(file){ return new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(String(fr.result).split(",")[1]||""); fr.onerror=rej; fr.readAsDataURL(file); }); }
+  async function docxBase64ToText(b64){
+    try{
+      if(!b64) return "";
+      const bin=atob(b64); const len=bin.length; const buf=new ArrayBuffer(len); const view=new Uint8Array(buf);
+      for(let i=0;i<len;i++) view[i]=bin.charCodeAt(i);
+      const { value }=await mammoth.extractRawText({ arrayBuffer:buf });
+      return String(value||"").trim();
+    }catch{ return ""; }
+  }
+
+  function setDZOver(el,over){ el.classList.toggle("over",over); }
+  function validateFile(file, {types,maxMB}){
+    if(!file) return {ok:false, msg:"No file selected"};
+    const ext=(file.name.split(".").pop()||"").toLowerCase();
+    if(types && !types.includes(ext)) return {ok:false, msg:`Invalid type .${ext}. Expected: ${types.join(", ")}`};
+    if(maxMB && file.size > maxMB*1024*1024) return {ok:false, msg:`File too large (> ${maxMB} MB)`};
+    return {ok:true};
+  }
+
+  function bindJsonUploads(){
+    const dz=els.dzJson, input=els.gsJson;
+    dz.addEventListener("dragover",(e)=>{e.preventDefault(); setDZOver(dz,true);});
+    dz.addEventListener("dragleave",()=>setDZOver(dz,false));
+    dz.addEventListener("drop", async (e)=>{ e.preventDefault(); setDZOver(dz,false); const f=e.dataTransfer.files?.[0]; await handleJsonFile(f); });
+    dz.addEventListener("paste", async (e)=>{ const t=e.clipboardData.getData("text"); if(t){ try{ JSON.parse(t); localStorage.setItem(LS_GS_JSON,t); els.gsJsonName.textContent="DATASET.json ✓ (pasted)"; updateGSBadges(); setStatus("DATASET.json saved from paste."); }catch{ setStatus('<span class="warn">Pasted text is not valid JSON.</span>'); } } });
+    els.btnPickJson.addEventListener("click",()=>input.click());
+    input.addEventListener("change", async (e)=>{ const f=e.target.files?.[0]; await handleJsonFile(f); });
+    els.btnClearJson.addEventListener("click",()=>{ localStorage.removeItem(LS_GS_JSON); els.gsJsonName.textContent="Not uploaded"; updateGSBadges(); setStatus("Cleared DATASET.json."); });
+
+    async function handleJsonFile(f){
+      const v=validateFile(f,{types:["json"], maxMB:20}); if(!v.ok){ setStatus('<span class="warn">'+v.msg+'</span>'); return; }
+      try{ const txt=await readAsText(f); JSON.parse(txt); localStorage.setItem(LS_GS_JSON, txt); els.gsJsonName.textContent=f.name+" ✓"; updateGSBadges(); setStatus("Saved DATASET.json."); }
+      catch{ setStatus('<span class="err">Invalid JSON file.</span>'); }
+    }
+  }
+
+  function bindCsvUploads(){
+    const dz=els.dzCsv, input=els.gsCsv;
+    dz.addEventListener("dragover",(e)=>{e.preventDefault(); setDZOver(dz,true);});
+    dz.addEventListener("dragleave",()=>setDZOver(dz,false));
+    dz.addEventListener("drop", async (e)=>{ e.preventDefault(); setDZOver(dz,false); const f=e.dataTransfer.files?.[0]; await handleCsvFile(f); });
+    els.btnPickCsv.addEventListener("click",()=>input.click());
+    input.addEventListener("change", async (e)=>{ const f=e.target.files?.[0]; await handleCsvFile(f); });
+    els.btnClearCsv.addEventListener("click",()=>{ localStorage.removeItem(LS_GS_CSV); els.gsCsvName.textContent="Not uploaded"; updateGSBadges(); setStatus("Cleared Top10 CSV."); });
+
+    async function handleCsvFile(f){
+      const v=validateFile(f,{types:["csv"], maxMB:20}); if(!v.ok){ setStatus('<span class="warn">'+v.msg+'</span>'); return; }
+      try{ const txt=await readAsText(f); localStorage.setItem(LS_GS_CSV, txt); els.gsCsvName.textContent=f.name+" ✓"; updateGSBadges(); setStatus("Saved Top10 CSV."); }
+      catch{ setStatus('<span class="err">Failed to read CSV.</span>'); }
+    }
+  }
+
+  function bindDocUploads(){
+    const dz=els.dzDoc, input=els.gsDoc;
+    dz.addEventListener("dragover",(e)=>{e.preventDefault(); setDZOver(dz,true);});
+    dz.addEventListener("dragleave",()=>setDZOver(dz,false));
+    dz.addEventListener("drop", async (e)=>{ e.preventDefault(); setDZOver(dz,false); const f=e.dataTransfer.files?.[0]; await handleDocFile(f); });
+    els.btnPickDoc.addEventListener("click",()=>input.click());
+    input.addEventListener("change", async (e)=>{ const f=e.target.files?.[0]; await handleDocFile(f); });
+    els.btnClearDoc.addEventListener("click",()=>{ localStorage.removeItem(LS_GS_DOCX); els.gsDocName.textContent="Not uploaded"; updateGSBadges(); setStatus("Cleared Keywords DOCX."); });
+
+    async function handleDocFile(f){
+      const v=validateFile(f,{types:["docx"], maxMB:30}); if(!v.ok){ setStatus('<span class="warn">'+v.msg+'</span>'); return; }
+      try{ const b64=await readAsBase64(f); localStorage.setItem(LS_GS_DOCX,b64); els.gsDocName.textContent=f.name+" ✓"; updateGSBadges(); setStatus("Saved Keywords DOCX."); }
+      catch{ setStatus('<span class="err">Failed to read DOCX.</span>'); }
+    }
+  }
+
+  // ---------- NEW: server GS detection ----------
+  let serverGSAvailable = false;
+
+  async function fetchGSStatus() {
+    try {
+      const r = await fetch(`${API_BASE}/api/gs-status`);
+      if (!r.ok) throw new Error(`status ${r.status}`);
+      const j = await r.json();
+      serverGSAvailable = !!j?.serverGS?.all;
+      if (serverGSAvailable) {
+        els.gsStatus.textContent = 'GS: server';
+        els.gsStatus.style.color = 'var(--ok)';
+      }
+    } catch {
+      // ignore network issues; fallback to local GS
+    }
+  }
+
+  function updateGSBadges(){
+    const hasJson=!!localStorage.getItem(LS_GS_JSON);
+    const hasCsv =!!localStorage.getItem(LS_GS_CSV);
+    const hasDoc =!!localStorage.getItem(LS_GS_DOCX);
+
+    // Respect server GS if present (badge UI only; logic stays same)
+    if (serverGSAvailable) {
+      els.gsStatus.textContent = 'GS: server';
+      els.gsStatus.style.color = 'var(--ok)';
+    } else {
+      els.gsStatus.textContent = `GS: ${hasJson&&hasCsv&&hasDoc?"loaded":"incomplete"}`;
+      els.gsStatus.style.color = (hasJson&&hasCsv&&hasDoc)?"var(--ok)":"var(--warn)";
+    }
+
+    els.gsJsonName.textContent = hasJson? "DATASET.json ✓":"Not uploaded";
+    els.gsCsvName .textContent = hasCsv ? "Top10 CSV ✓":"Not uploaded";
+    els.gsDocName .textContent = hasDoc ? "Keywords .docx ✓":"Not uploaded";
+  }
+
+  // Helper: read server error text/json
+  async function readServerError(resp){
+    try{ const j = await resp.json(); return j?.error || JSON.stringify(j); }
+    catch{ try{ return await resp.text(); } catch { return '(no error body)'; } }
+  }
+
+  async function run(){
+    try{
+      const s=loadSettings()||hardDefaults;
+      const strategistPrompt=(els.prompt.value.trim()||s.prompt);
+      if(!strategistPrompt){ alert("Paste your strategist prompt in Settings."); toggleSettings(true); return; }
+
+      let videoSource="N/A", localFile=null;
+      if(currentInputMethod==='url'){
+        const url=els.ytUrl.value.trim();
+        if(url) videoSource=`YouTube URL: ${url}`;
+        else { alert("Enter a YouTube URL or switch to Local Video File."); return; }
+      }else{
+        localFile = els.videoFile.files?.[0] || null;
+        if(localFile) videoSource = `Local File: ${localFile.name}`;
+        else { alert("Choose a local video file or switch to YouTube URL."); return; }
+      }
+
+      // Keep your existing local GS read (used only if server GS not available)
+      const gsJsonStr=localStorage.getItem(LS_GS_JSON)||"";
+      const gsCsvStr =localStorage.getItem(LS_GS_CSV)||"";
+      const gsDocB64 =localStorage.getItem(LS_GS_DOCX)||"";
+      let gsKeywordsText = "";
+      if(gsDocB64){ try{ gsKeywordsText=await docxBase64ToText(gsDocB64);}catch{} }
+
+      setProgress(10,"<strong>Step 1/3:</strong> Preparing video…");
+      els.runBtn.disabled=true;
+
+      // 1) Get fileUri (upload or fetch)
+      let fileUri="", fileMime="video/mp4";
+      if(currentInputMethod==='url'){
+        const r = await fetch(`${API_BASE}/api/fetch-youtube`, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ url: els.ytUrl.value.trim() })
+        });
+        if(!r.ok) throw new Error(`YouTube fetch failed: ${r.status} — ${await readServerError(r)}`);
+        const j = await r.json();
+        fileUri = j.fileUri; fileMime = j.mimeType || fileMime;
+        if(!fileUri) throw new Error('fileUri missing from /api/fetch-youtube');
+      }else{
+        const fd = new FormData(); fd.append('video', localFile, localFile.name);
+        const r = await fetch(`${API_BASE}/api/upload-video`, { method:'POST', body: fd });
+        if(!r.ok) throw new Error(`Video upload failed: ${r.status} — ${await readServerError(r)}`);
+        const j = await r.json();
+        fileUri = j.fileUri; fileMime = j.mimeType || fileMime;
+        if(!fileUri) throw new Error('fileUri missing from /api/upload-video');
+      }
+
+      setProgress(55,"<strong>Step 2/3:</strong> Generating with Gemini…");
+
+      // 2) Generate — use server GS if available; else send browser GS (unchanged)
+      const body = {
+        fileUri, fileMime, videoSource,
+        strategistPrompt,
+        topic: els.topic.value.trim(),
+        titleHint: els.titleHint.value.trim(),
+        contextText: els.contextNotes.value.trim()
+      };
+      if (!serverGSAvailable) {
+        body.gsJson = gsJsonStr;
+        body.gsCsv = gsCsvStr;
+        body.gsKeywordsText = gsKeywordsText;
+      }
+
+      const gen = await fetch(`${API_BASE}/api/generate`, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify(body)
+      });
+      if(!gen.ok) throw new Error(`Generate failed: ${gen.status} — ${await readServerError(gen)}`);
+
+      const data = await gen.json();
+
+      setProgress(85,"<strong>Step 3/3:</strong> Formatting output…");
+      const cleaned = normalizeHtml(data.html || "");
+      els.output.innerHTML = cleaned || "<p>No content returned. Check your prompt and inputs.</p>";
+      setProgress(100,"<strong>Done.</strong> Generated 10 packages.");
+      els.runBtn.disabled=false;
+    }catch(err){
+      console.error(err);
+      setStatus(`<span class="err">${err.message||String(err)}</span>`);
+      setProgress(0);
+      els.runBtn.disabled=false;
+    }
+  }
+
+  els.saveSettings.addEventListener("click", ()=>{
+    const v={ prompt: els.prompt.value.trim() };
+    if(!v.prompt){ alert("Prompt is required."); return; }
+    saveSettings(v); updateGSBadges(); setStatus("Settings saved.");
+    toggleSettings(false);
+  });
+
+  els.runBtn.addEventListener("click",run);
+  els.copyBtn.addEventListener("click", async ()=>{
+    const html=els.output.innerHTML||"";
+    if(!html || /Run the generator/i.test(html)){ alert("No output to copy."); return; }
+    try{
+      const blob = new Blob([html], {type: "text/html"});
+      await navigator.clipboard.write([new ClipboardItem({ "text/html": blob })]);
+      setStatus("<strong>Copied</strong> formatted HTML to clipboard.");
+    }catch{
+      await navigator.clipboard.writeText(html);
+      setStatus("<strong>Copied</strong> formatted HTML to clipboard.");
+    }
+  });
+
+  // NEW: export current #output to DOCX (simple HTML→DOCX mapper)
+  els.saveDocBtn.addEventListener("click", async ()=>{
+    const container = els.output;
+    if(!container || !container.innerHTML || /Run the generator/i.test(container.innerHTML)){
+      alert("No output to export.");
+      return;
+    }
+    setStatus("Building DOCX…");
+
+    const children = Array.from(container.childNodes);
+    const docChildren = [];
+
+    function para(text, opts={}) {
+      return new docx.Paragraph({ text, spacing:{ after:200 }, ...opts });
+    }
+
+    function walk(node){
+      if(node.nodeType===Node.TEXT_NODE){
+        const t=node.textContent?.trim();
+        if(t) docChildren.push(para(t));
+        return;
+      }
+      if(!(node instanceof HTMLElement)) return;
+
+      const tag = node.tagName.toLowerCase();
+
+      if(tag==='h1'||tag==='h2'||tag==='h3'){
+        const size = tag==='h1'?32:tag==='h2'?26:22;
+        const txt = node.textContent?.trim() || '';
+        if(txt) docChildren.push(para(txt,{ heading: docx.HeadingLevel.HEADING_1, run: { size } }));
+        return;
+      }
+      if(tag==='p'){
+        const txt=node.textContent||'';
+        docChildren.push(para(txt));
+        return;
+      }
+      if(tag==='ul'||tag==='ol'){
+        const items = Array.from(node.querySelectorAll(':scope > li'));
+        items.forEach(li=>{
+          const txt=li.textContent||'';
+          docChildren.push(new docx.Paragraph({
+            text: txt,
+            bullet: tag==='ul' ? { level:0 } : undefined,
+            numbering: tag==='ol' ? { reference: "ol-num", level:0 } : undefined,
+          }));
+        });
+        return;
+      }
+      if(tag==='hr'){
+        docChildren.push(new docx.Paragraph({}));
+        return;
+      }
+      // Fallback: walk children
+      Array.from(node.childNodes).forEach(walk);
+    }
+
+    children.forEach(walk);
+
+    const doc = new docx.Document({
+      numbering: {
+        config: [{
+          reference: "ol-num",
+          levels: [{ level:0, format: docx.LevelFormat.DECIMAL, text: "%1.", alignment: docx.AlignmentType.START }]
+        }]
+      },
+      sections: [{ properties: {}, children: docChildren.length?docChildren:[para(" ")] }]
+    });
+
+    const blob = await docx.Packer.toBlob(doc);
+    const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `Title_Thumbnail_Packages_${ts}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setStatus("DOCX downloaded.");
+  });
+
+  (async function init(){
+    const s=loadSettings(); if(s) applySettings(s); else applySettings(hardDefaults);
+    switchInputMethod('url');
+    await fetchGSStatus();
+    updateGSBadges();
+    setStatus("Ready.");
+    bindJsonUploads(); bindCsvUploads(); bindDocUploads();
+  })();
+</script>
+</body>
+</html>
