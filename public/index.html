@@ -183,8 +183,8 @@
   import mammoth from "https://esm.run/mammoth@1.7.2";
   /* NEW */ import * as docx from "https://esm.run/docx@8.5.0";
 
-  // Frontend served at 127.0.0.1:5501; backend runs at 3002
-  const API_BASE = 'http://localhost:3002';
+  // Frontend + Backend served together at the same origin (e.g., http://localhost:3002)
+  const API_BASE = '';
 
   const $ = (id)=>document.getElementById(id);
   const els = {

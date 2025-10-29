@@ -3,6 +3,7 @@ import 'dotenv/config';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { fileURLToPath } from 'url';            // NEW for __dirname in ESM
 import { promisify } from 'util';
 import express from 'express';
 import cors from 'cors';
@@ -15,9 +16,17 @@ const unlink = promisify(fs.unlink);
 const writeFile = promisify(fs.writeFile);
 const readFile = promisify(fs.readFile);
 
+// Resolve __dirname for ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = path.dirname(__filename);
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '25mb' })); // GS text can be large
+
+// Serve frontend (static) from /public on the SAME PORT as the API
+const PUBLIC_DIR = path.join(__dirname, 'public');
+app.use(express.static(PUBLIC_DIR));
 
 // ---- Multer (in-memory) ----
 const upload = multer({
@@ -27,7 +36,7 @@ const upload = multer({
 
 const API_KEY = process.env.GOOGLE_API_KEY;
 const MODEL   = process.env.MODEL || 'gemini-2.5-pro';
-const PORT    = process.env.PORT || 3001;
+const PORT    = process.env.PORT || 3002;     // CHANGED default from 3001 to 3002
 
 const GS_JSON_PATH = process.env.GS_JSON_PATH || '';
 const GS_CSV_PATH  = process.env.GS_CSV_PATH  || '';
@@ -138,7 +147,7 @@ async function waitForFileActive(fileId, { timeoutMs = 120000, initialDelay = 12
   while (Date.now() - started < timeoutMs) {
     const metaResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileId}?key=${API_KEY}`);
     if (!metaResp.ok) {
-      const txt = await metaResp.text().catch(()=>'');
+      const txt = await metaResp.text().catch(()=> '');
       throw new Error(`Files API GET failed (${metaResp.status}): ${txt}`);
     }
     const meta = await metaResp.json();
