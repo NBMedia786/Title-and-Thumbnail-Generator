@@ -21,14 +21,21 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
 const app = express();
-app.use(cors());
-app.use(express.json({ limit: '25mb' })); // GS text can be large
+
+// ✅ CORS hardened so any Chrome profile/device/origin works
+app.use(cors({ origin: true, credentials: true }));
+app.options('*', cors({ origin: true, credentials: true }));
+
+// ✅ Larger body limit to avoid aborted requests when client GS fallback sends big payloads
+app.use(express.json({ limit: '200mb' }));
+app.use(express.urlencoded({ extended: true, limit: '200mb' }));
 
 // Serve frontend (static) from /public on the SAME PORT as the API
 const PUBLIC_DIR = path.join(__dirname, 'public');
 app.use(express.static(PUBLIC_DIR));
 
 // ---- Multer (in-memory) ----
+// (kept intact: memory storage + 1GB limit)
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 1024 * 1024 * 1024 } // up to ~1GB
@@ -49,11 +56,11 @@ if (!API_KEY) {
 
 const genAI = new GoogleGenerativeAI(API_KEY);
 
-// ---- Helpers ----
+// ---- Helpers (kept) ----
 function clip(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n) : s; }
 const GS_CAP = { json: 180000, csv: 120000, kw: 120000 };
 
-// ---- Server-side GS cache ----
+// ---- Server-side GS cache (kept) ----
 let serverGS = { json: '', csv: '', kw: '' };
 
 async function fileExists(p) {
@@ -196,7 +203,7 @@ async function uploadBufferToFilesAPI(buffer, mimeType, displayName) {
 // ---- Health ----
 app.get('/health', (req, res) => res.send('ok'));
 
-// ---- GS status & reload (new endpoints; non-breaking) ----
+// ---- GS status & reload (kept) ----
 app.get('/api/gs-status', (req, res) => {
   res.json({
     ok: true,
@@ -219,7 +226,7 @@ app.post('/api/gs-reload', async (req, res) => {
   res.json({ ok: true, loaded });
 });
 
-// ---- 1) Upload local MP4 -> Files API ----
+// ---- 1) Upload local MP4 -> Files API (kept) ----
 app.post('/api/upload-video', upload.single('video'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ ok: false, error: 'No video uploaded' });
@@ -230,14 +237,15 @@ app.post('/api/upload-video', upload.single('video'), async (req, res) => {
     const { fileUri, fileId } = await uploadBufferToFilesAPI(req.file.buffer, mime, name);
     console.log(`✅  Uploaded to Files API: ${fileId} (ACTIVE)`);
 
-    res.json({ ok: true, fileUri, fileId, mimeType: mime, displayName: name });
+    // Include both keys for compatibility with any frontend variant
+    res.json({ ok: true, fileUri, fileId, mimeType: mime, fileMime: mime, displayName: name });
   } catch (err) {
     console.error('Upload error:', err?.message || err);
     res.status(500).json({ ok: false, error: err?.message || 'Upload failed' });
   }
 });
 
-// ---- 2) Fetch YouTube -> download -> Files API ----
+// ---- 2) Fetch YouTube -> download -> Files API (kept) ----
 app.post('/api/fetch-youtube', async (req, res) => {
   try {
     const { url } = req.body || {};
@@ -261,14 +269,14 @@ app.post('/api/fetch-youtube', async (req, res) => {
     const { fileUri, fileId } = await uploadBufferToFilesAPI(buffer, 'video/mp4', titleSafe);
     console.log(`✅  YouTube uploaded to Files API: ${fileId} (ACTIVE)`);
 
-    res.json({ ok: true, fileUri, fileId, mimeType: 'video/mp4', displayName: titleSafe });
+    res.json({ ok: true, fileUri, fileId, mimeType: 'video/mp4', fileMime: 'video/mp4', displayName: titleSafe });
   } catch (err) {
     console.error('YouTube fetch error:', err?.message || err);
     res.status(500).json({ ok: false, error: err?.message || 'YouTube fetch failed' });
   }
 });
 
-// ---- 3) Generate (two-turn; video attached) ----
+// ---- 3) Generate (two-turn; video attached) (kept) ----
 app.post('/api/generate', async (req, res) => {
   try {
     const {
@@ -361,4 +369,7 @@ app.post('/api/generate', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`Server running http://localhost:${PORT}`));
+// ✅ Longer timeouts help slow networks/big uploads avoid abrupt "Failed to fetch"
+const server = app.listen(PORT, () => console.log(`Server running http://0.0.0.0:${PORT}`));
+server.headersTimeout = 300000;   // 5 minutes
+server.requestTimeout = 300000;   // 5 minutes
