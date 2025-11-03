@@ -1,0 +1,13 @@
+﻿node_modules/
+dist/
+.env
+bin/
+*.tmp
+*.part
+*.log
+*.mp4
+*.webm
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

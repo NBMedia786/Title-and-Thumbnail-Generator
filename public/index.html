@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Title + Thumbnail Idea Generator — Single File (Video-aware)</title>
+<title>Title + Thumbnail Idea Generator</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-  :root{ --bg:#0a0c10; --bg-gradient-start:#0a0c10; --bg-gradient-end:#0d0f14; --panel:#11141a; --panel-2:#0e1116; --text:#e8ecf4; --muted:#8b96a8; --brand:#6ea8ff; --brand-light:#8ec2ff; --accent:#22d3ee; --ok:#10b981; --warn:#f59e0b; --err:#ef4444; --border:#202633; --border-light:#2a3245; --focus:#37a7ff; --fieldbg:#151a23; --shadow-color:rgba(0,0,0,.4); }
+  :root{ --bg:#0a0c10; --bg-gradient-start:#0a0c10; --bg-gradient-end:#0d0f14; --panel:#11141a; --panel-2:#0e1116; --text:#e8ecf4; --muted:#8b96a8; --brand:#6ea8ff; --brand-light:#8ec2ff; --accent:#22d3ee; --ok:#10b981; --warn:#f59e0b; --err:#ef4444; --border:#202633; --border-light:#2a3245; --focus:#37a7ff; --fieldbg:#151a23; --shadow-color:rgba(0,0,0,.4); --hover:#0f141c; }
   *{box-sizing:border-box}
   html,body{height:100%}
   body{margin:0; font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif; background:linear-gradient(170deg,var(--bg-gradient-start),var(--bg-gradient-end)); color:var(--text)}
@@ -37,7 +37,10 @@
   .tab-bar{display:flex; gap:6px; border-bottom:1px solid var(--border); margin-bottom:12px}
   .tab-btn{background:transparent; border:none; color:var(--muted); font-weight:600; font-size:14px; padding:10px 16px; cursor:pointer; border-bottom:2px solid transparent}
   .tab-btn.active{color:var(--brand-light); border-bottom-color:var(--brand-light)}
-  #localInputContainer{display:none} #videoPreviewContainer{display:none; margin-top:16px} #videoPreview{width:100%; max-height:250px; border-radius:12px; background:#000}
+  /* Input previews */
+  #localInputContainer{display:none}
+  #videoPreviewContainer, #ytPreviewContainer{ display:none; margin-top:16px; }
+  #videoPreview, #ytPreview{ width:100%; aspect-ratio:16 / 9; height:auto; max-height:420px; border-radius:12px; background:#000; border:0; display:block; }
   .status{margin-top:16px; font-size:14px; color:var(--muted); font-weight:500}
   .progress{height:10px; width:100%; background:var(--fieldbg); border:1px solid var(--border); border-radius:999px; overflow:hidden}
   .bar{height:100%; width:0%; background:linear-gradient(90deg,var(--brand),var(--accent)); transition:width .35s ease}
@@ -50,16 +53,89 @@
   .out ul,.out ol{margin:6px 0 6px 18px; padding:0}
   .out hr{border:none; border-top:1px solid var(--border-light); margin:12px 0}
   .ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:var(--err)}
-  .sheet-backdrop{position:fixed; inset:0; background:rgba(0,0,0,.4); opacity:0; visibility:hidden; transition:.2s}
-  .sheet-backdrop.open{opacity:1; visibility:visible}
-  .sheet{position:fixed; right:0; top:0; bottom:0; width:560px; max-width:100%; background:linear-gradient(180deg,var(--panel),var(--panel-2)); border-left:1px solid var(--border); box-shadow: -10px 0 32px rgba(0,0,0,.35); transform:translateX(100%); transition:.25s; display:flex; flex-direction:column}
-  .sheet.open{transform:translateX(0)}
-  .sheet header{display:flex; align-items:center; justify-content:space-between; gap:12px}
-  .sheet .body{padding:20px 24px; overflow:auto}
-  .dz{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; border:1px dashed var(--border-light); border-radius:12px; background:rgba(21,26,35,.55); margin-top:6px}
-  .dz.over{background:rgba(21,26,35,.8)}
-  .dz .actions{display:flex; gap:8px}
-  .dz .name{color:var(--muted); font-size:12px}
+
+  /* ===== Settings slide-in sheet & backdrop ===== */
+  .sheet-backdrop{
+    position:fixed; inset:0; background:rgba(0,0,0,.55);
+    opacity:0; pointer-events:none; transition:.2s opacity; z-index:96;
+  }
+  .sheet-backdrop.open{ opacity:1; pointer-events:auto; }
+
+  .sheet{
+    position:fixed; top:0; right:0; bottom:0;
+    width:560px; max-width:92vw;
+    background:linear-gradient(180deg,var(--panel),var(--panel-2));
+    border-left:1px solid var(--border);
+    box-shadow:-14px 0 36px var(--shadow-color);
+    transform:translateX(100%); transition:transform .25s ease;
+    display:flex; flex-direction:column; z-index:98;
+  }
+  .sheet.open{ transform:translateX(0); }
+  .sheet header{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    padding:14px 16px; border-bottom:1px solid var(--border);
+  }
+  .sheet .body{ padding:16px; overflow:auto; }
+  @media (max-width:720px){ .sheet{ width:100%; max-width:none; } }
+
+  /* ===== ChatGPT-like History Sidebar ===== */
+  .history-pane{
+    position:fixed; top:0; bottom:0; left:0; width:320px; max-width:88vw;
+    background:linear-gradient(180deg,var(--panel),var(--panel-2));
+    border-right:1px solid var(--border);
+    box-shadow:10px 0 28px var(--shadow-color);
+    transform:translateX(-100%); transition:.25s;
+    display:flex; flex-direction:column; z-index:70
+  }
+  .history-pane.open{ transform:translateX(0) }
+  .hhead{
+    padding:12px 14px; border-bottom:1px solid var(--border);
+    display:flex; align-items:center; justify-content:space-between; gap:8px
+  }
+  .hbrand{display:flex; align-items:center; gap:10px}
+  .hlogo{width:28px; height:28px; border-radius:8px; background:linear-gradient(135deg,var(--brand),var(--accent)); display:grid; place-items:center; color:#0b1020; font-weight:900}
+  .hname{font-weight:800}
+  .husage{font-size:12px; color:var(--muted)}
+  .hmeter{height:6px; background:#202633; border:1px solid var(--border); border-radius:999px; overflow:hidden; margin-top:6px}
+  .hmeter .fill{height:100%; width:0%}
+
+  .hsearch{padding:10px 12px; border-bottom:1px solid var(--border)}
+  .hsearch input{width:100%; padding:10px 12px; border-radius:10px; background:var(--fieldbg); color:var(--text); border:1px solid var(--border)}
+
+  .hlist{flex:1; overflow:auto; padding:6px 0}
+  .hitem{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    padding:10px 12px; border-radius:0; cursor:pointer;
+  }
+  .hitem:hover{ background:var(--hover) }
+  .htitle{ font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; }
+  .hdate{ display:none }
+
+  .hkebab{ background:transparent; border:0; width:28px; height:28px; border-radius:6px; display:grid; place-items:center; font-weight:900; color:var(--muted); }
+  .hkebab:hover{ color:var(--text); background:#0e1219; }
+
+  /* Global floating kebab menu (appended to <body>) */
+  .hmenu {
+    position: fixed;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 6px 0;
+    min-width: 180px;
+    z-index: 9999;
+    box-shadow: 0 10px 20px rgba(0,0,0,.35);
+    transform-origin: top right;
+    display: none;
+  }
+  .hmenu.open { display: block; animation: fadeSlideIn .12s ease; }
+  @keyframes fadeSlideIn { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:translateY(0)} }
+  .hmenu .hline { font-size:12px; color:var(--muted); padding:8px 12px; border-bottom:1px solid var(--border); user-select:none; }
+  .hmenu .action { width:100%; background:transparent; border:0; text-align:left; padding:10px 12px; font-size:14px; color:var(--text); cursor:pointer; border-radius:6px; }
+  .hmenu .action:hover { background:#151a23; }
+  .hmenu .danger { color:#fca5a5; }
+
+  /* Progress overlay */
+  @keyframes spin{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
@@ -69,10 +145,11 @@
       <div class="logo-badge">AI</div>
       <div>
         <div>Title + Thumbnail Idea Generator</div>
-        <div class="sub">Video-aware • Gemini 2.5 Pro • GS saved in browser</div>
+        <div class="sub"></div>
       </div>
     </div>
     <div style="display:flex; align-items:center; gap:10px;">
+      <button id="openHist" class="ghost" title="Open history">History</button>
       <div class="pill" id="gsStatus">GS: not loaded</div>
       <button id="openSettings" class="ghost">Settings</button>
     </div>
@@ -86,11 +163,18 @@
         <button id="urlBtn" class="tab-btn active">YouTube URL</button>
         <button id="localBtn" class="tab-btn">Local Video File</button>
       </div>
+
+      <!-- URL mode -->
       <div id="urlInputContainer">
         <div class="form-group" style="margin-top:8px">
           <input id="ytUrl" type="text" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off"/>
         </div>
+        <div id="ytPreviewContainer">
+          <iframe id="ytPreview" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+        </div>
       </div>
+
+      <!-- Local mode -->
       <div id="localInputContainer">
         <input id="videoFile" type="file" accept="video/*"/>
         <div id="videoPreviewContainer"><video id="videoPreview" controls></video></div>
@@ -113,10 +197,9 @@
       <div class="btnbar">
         <button class="primary" id="runBtn">Generate 10 Packages</button>
         <button class="ghost" id="copyBtn">Copy Output</button>
-        <!-- NEW -->
         <button class="ghost" id="saveDocBtn">Download DOCX</button>
       </div>
-      <div id="status" class="status">Ready.</div>
+      <div id="status" class="status" aria-live="polite">Ready.</div>
       <div class="progress" style="margin-top:10px"><div class="bar" id="bar"></div></div>
     </div>
   </section>
@@ -131,6 +214,35 @@
   </section>
 </div>
 
+<!-- History Sidebar -->
+<aside id="histPane" class="history-pane" aria-hidden="true">
+  <div class="hhead">
+    <div class="hbrand">
+      <div class="hlogo">H</div>
+      <div>
+        <div class="hname">History</div>
+        <div class="husage"><span id="hUsed">0 B</span> • <span id="hLimit">20 GB</span></div>
+        <div class="hmeter"><div id="hFill" class="fill"></div></div>
+      </div>
+    </div>
+    <button id="closeHist" class="ghost">Close</button>
+  </div>
+
+  <div class="hbanner" id="hBanner" style="display:none">
+    <div><strong>Storage full</strong> — delete items or auto-purge oldest to save new runs.</div>
+    <div class="row" style="display:flex;gap:8px;margin-top:6px">
+      <button id="hAutoPurge" class="ghost">Auto-purge oldest</button>
+      <button id="hBannerClose" class="ghost">Dismiss</button>
+    </div>
+  </div>
+
+  <div class="hsearch">
+    <input id="hQuery" type="text" placeholder="Search title…"/>
+  </div>
+
+  <div id="hList" class="hlist"></div>
+</aside>
+
 <!-- Settings -->
 <div id="settingsBackdrop" class="sheet-backdrop" aria-hidden="true"></div>
 <aside id="settingsSheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="stitle" aria-hidden="true">
@@ -139,12 +251,12 @@
     <button id="closeSettings" class="ghost" title="Close">Close</button>
   </header>
   <div class="body">
-    <p class="sub" style="margin-top:0">Gold-Standard files are stored locally in this browser and auto-attached to every run.</p>
+    <p class="sub" style="margin-top:0">Gold-Standard files are stored locally in this browser and auto-attached to every run (or taken from server paths if available).</p>
 
     <label class="required" for="prompt">Your Strategist Prompt</label>
     <textarea id="prompt" class="mono" placeholder="Paste your strategist rules. Output=HTML with 10 packages."></textarea>
 
-    <h3 style="margin:18px 0 8px">Gold-Standard Files (upload here only)</h3>
+    <h3 style="margin:18px 0 8px">Gold-Standard Files (upload here only if server GS isn’t configured)</h3>
 
     <label class="required">DATASET.json (patterns/examples)</label>
     <div class="dz" id="dzJson" tabindex="0">
@@ -177,11 +289,39 @@
   </div>
 </aside>
 
+<!-- Progress overlay (modal) -->
+<div id="progressOverlay" style="
+  position:fixed; inset:0; background:rgba(0,0,0,.6);
+  display:none; place-items:center; z-index:97;">
+  <div style="
+    width:520px; max-width:92vw;
+    background:var(--panel); border:1px solid var(--border);
+    border-radius:14px; padding:22px;">
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+      <div style="
+        width:18px; height:18px; border-radius:50%;
+        border:3px solid var(--brand); border-right-color:transparent;
+        animation:spin 1s linear infinite"></div>
+      <strong>Submitting…</strong>
+    </div>
+    <div class="progress"><div class="bar" id="modalBar"></div></div>
+    <div id="modalStatus" class="status" style="margin-top:10px">Connecting…</div>
+  </div>
+</div>
+
+<!-- Global kebab flyout reused for every row -->
+<div id="hFly" class="hmenu" role="menu" aria-hidden="true">
+  <div id="hFlySize" class="hline">Size: 0 KB</div>
+  <button class="action" data-fly="rename">Rename</button>
+  <button class="action" data-fly="share">Share</button>
+  <button class="action danger" data-fly="delete">Delete</button>
+</div>
+
 <script type="module">
   import mammoth from "https://esm.run/mammoth@1.7.2";
-  /* NEW */ import * as docx from "https://esm.run/docx@8.5.0";
+  import { marked } from "https://esm.run/marked@12.0.2";
+  import * as docx from "https://esm.run/docx@8.5.0";
 
-  /* === FIX: robust API base so every profile/device hits the same backend === */
   const API_BASE =
     (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
       ? 'http://localhost:3002'
@@ -195,6 +335,7 @@
     urlBtn:$("urlBtn"), localBtn:$("localBtn"),
     urlInputContainer:$("urlInputContainer"), localInputContainer:$("localInputContainer"),
     videoFile:$("videoFile"), videoPreview:$("videoPreview"), videoPreviewContainer:$("videoPreviewContainer"),
+    ytPreviewContainer:$("ytPreviewContainer"), ytPreview:$("ytPreview"),
     gsStatus:$("gsStatus"),
     openSettings:$("openSettings"), closeSettings:$("closeSettings"),
     settingsBackdrop:$("settingsBackdrop"), settingsSheet:$("settingsSheet"),
@@ -205,7 +346,13 @@
     btnClearJson:$("btnClearJson"), btnClearCsv:$("btnClearCsv"), btnClearDoc:$("btnClearDoc"),
     gsJson:$("gsJson"), gsCsv:$("gsCsv"), gsDoc:$("gsDoc"),
     gsJsonName:$("gsJsonName"), gsCsvName:$("gsCsvName"), gsDocName:$("gsDocName"),
-    /* NEW */ saveDocBtn: $("saveDocBtn"),
+    saveDocBtn: $("saveDocBtn"),
+
+    /* History UI */
+    openHist:$("openHist"), closeHist:$("closeHist"), histPane:$("histPane"),
+    hUsed:$("hUsed"), hLimit:$("hLimit"), hFill:$("hFill"),
+    hList:$("hList"), hQuery:$("hQuery"),
+    hBanner:$("hBanner"), hAutoPurge:$("hAutoPurge"), hBannerClose:$("hBannerClose"),
   };
 
   const LS_KEY="tt_generator_singlefile_settings_v3";
@@ -240,6 +387,7 @@
     const isOpen=open ?? !els.settingsSheet.classList.contains("open");
     els.settingsSheet.classList.toggle("open",isOpen);
     els.settingsBackdrop.classList.toggle("open",isOpen);
+    document.body.style.overflow = isOpen ? 'hidden' : '';
   }
   els.openSettings.addEventListener("click",()=>toggleSettings(true));
   els.closeSettings.addEventListener("click",()=>toggleSettings(false));
@@ -247,19 +395,94 @@
   window.addEventListener("keydown",(e)=>{ if(e.key==="Escape") toggleSettings(false); });
 
   els.resetSettings.addEventListener("click",()=>{ applySettings(hardDefaults); saveSettings(hardDefaults); setStatus("Settings reset."); });
-  function setStatus(msg){ els.status.innerHTML=msg; }
-  function setProgress(pct,msg){ els.bar.style.width=Math.max(0,Math.min(100,pct))+"%"; if(msg) setStatus(msg); }
 
+  function setStatus(msg){ els.status.innerHTML=msg; }
+
+  // Progress overlay
+  const modal = document.getElementById('progressOverlay');
+  const modalBar = document.getElementById('modalBar');
+  const modalStatus = document.getElementById('modalStatus');
+  function showProgress(show){ modal.style.display = show ? 'grid' : 'none'; }
+  function setProgress(pct,msg){
+    const pctClamped = Math.max(0, Math.min(100, pct|0));
+    els.bar.style.width = pctClamped + "%";
+    modalBar.style.width = pctClamped + "%";
+    if (msg){ els.status.innerHTML = msg; modalStatus.textContent = msg.replace(/<[^>]+>/g,''); }
+  }
+
+  /* ========= Queue helpers (SSE) ========= */
+  async function createQueueTicket() {
+    const r = await fetch(`${API_BASE}/api/queue/ticket`, { method: 'POST' });
+    if (!r.ok) throw new Error(`Ticket failed: ${r.status}`);
+    const j = await r.json();
+    if (!j?.id) throw new Error('No ticket id');
+    return j.id;
+  }
+  function mapProgressLabel(msg, phase){
+    const s = String(msg || '').toLowerCase();
+    if (phase === 'queued') return 'In queue…';
+    if ( /warm|model|initial|starting/.test(s) || /fetch.*youtube|yt[- ]?dl|download/.test(s) || /upload|files api|prepar(ing|e)/.test(s) )
+      return '<strong>Step 1/3:</strong> Preparing video…';
+    if ( /generat|gemini|analy(s|z)ing|processing|run(model)?/.test(s) )
+      return '<strong>Step 2/3:</strong> Generating…';
+    if ( /format|normaliz|finaliz|wrapp?ing|render/.test(s) )
+      return '<strong>Step 3/3:</strong> Formatting output…';
+    return msg || 'Processing…';
+  }
+  function attachQueueStream(id, { labelWhileActive = 'Processing…' } = {}) {
+    const es = new EventSource(`${API_BASE}/api/queue/${id}/stream`);
+    const setMapped = (pct, msg, phase) => {
+      const nice = mapProgressLabel(msg || labelWhileActive, phase);
+      setProgress(Math.max(5, pct|0), nice);
+    };
+    es.addEventListener('snapshot', (ev) => {
+      const snap = JSON.parse(ev.data || '{}');
+      if (snap.state === 'active') {
+        const p = snap.progress?.pct ?? 10;
+        const m = snap.progress?.msg || labelWhileActive;
+        setMapped(p, m, 'active');
+      } else {
+        const pos = snap.position || 1;
+        setProgress(5, `In queue… (#${pos})`);
+      }
+    });
+    es.addEventListener('queued', (ev) => {
+      const { position } = JSON.parse(ev.data || '{}');
+      setProgress(5, `In queue… (#${position||1})`);
+    });
+    es.addEventListener('started', (ev) => {
+      const { progress } = JSON.parse(ev.data || '{}');
+      setMapped(progress?.pct ?? 10, progress?.msg || labelWhileActive, 'active');
+    });
+    es.addEventListener('progress', (ev) => {
+      const { progress } = JSON.parse(ev.data || '{}');
+      setMapped(progress?.pct ?? 10, progress?.msg || labelWhileActive, 'active');
+    });
+    es.addEventListener('done', () => {
+      setProgress(100, '<strong>Done.</strong>');
+      es.close();
+    });
+    es.addEventListener('failed', (ev) => {
+      const { error } = JSON.parse(ev.data || '{}');
+      setProgress(0, `<span class="err">Failed: ${error || 'error'}</span>`);
+      es.close();
+    });
+    return () => es.close();
+  }
+
+  /* Input switching */
   let currentInputMethod="url";
   function switchInputMethod(method){
     currentInputMethod=method;
     if(method==='url'){
       els.urlBtn.classList.add('active'); els.localBtn.classList.remove('active');
       els.urlInputContainer.style.display='block'; els.localInputContainer.style.display='none';
-      els.videoPreviewContainer.style.display='none'; els.videoFile.value="";
+      els.videoPreviewContainer.style.display='none';
     }else{
       els.localBtn.classList.add('active'); els.urlBtn.classList.remove('active');
       els.localInputContainer.style.display='block'; els.urlInputContainer.style.display='none';
+      els.ytPreviewContainer.style.display='none';
+      els.ytPreview.src = '';
     }
   }
   els.urlBtn.addEventListener("click",()=>switchInputMethod('url'));
@@ -270,12 +493,121 @@
     const url=URL.createObjectURL(f); els.videoPreview.src=url; els.videoPreviewContainer.style.display='block';
   });
 
+  /* Normalization + linkify for timestamps */
   function normalizeHtml(rawHtml){
     if(!rawHtml) return "";
-    rawHtml=rawHtml.replace(/^```html\s*|```\s*$/g,"").replace(/(\s*<br\s*\/?>\s*){2,}/gi,"<br>");
-    const parser=new DOMParser(); const doc=parser.parseFromString(rawHtml,"text/html");
+    let s = rawHtml.replace(/^```(?:html|markdown|md)?\s*|```\s*$/gi,"").trim();
+    const looksLikeHtml = /<\s*[a-z][\s\S]*>/i.test(s);
+    const looksLikeMd   = /(^|\n)\s{0,3}(?:#{1,6}\s|[-*]\s|\d+\.\s|\*\*|__|> )/.test(s);
+    if (!looksLikeHtml && looksLikeMd) {
+      s = marked.parse(s, { mangle:false, headerIds:false });
+    }
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(s, "text/html");
     doc.body.querySelectorAll("script,style").forEach(n=>n.remove());
-    return doc.body.innerHTML.trim();
+    const html = doc.body.innerHTML.replace(/(\s*<br\s*\/?>\s*){2,}/gi,"<br>");
+    return html.trim();
+  }
+
+  function parseTimestampToSeconds(raw) {
+    if (!raw) return 0;
+    const s = String(raw).trim().toLowerCase().replace(/[()[\]]/g, '');
+    const hms = s.match(/^(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)$/i);
+    if (hms) {
+      const h = parseInt(hms[1] || '0', 10);
+      const m = parseInt(hms[2] || '0', 10);
+      const sec = parseInt(hms[3] || '0', 10);
+      return h * 3600 + m * 60 + sec;
+    }
+    const parts = s.split(':').map(x => x.trim());
+    if (parts.length === 3) {
+      const [H, M, S] = parts.map(n => parseInt(n, 10));
+      if ([H, M, S].every(n => Number.isFinite(n))) return H * 3600 + M * 60 + S;
+    }
+    if (parts.length === 2) {
+      const [M, S] = parts.map(n => parseInt(n, 10));
+      if ([M, S].every(n => Number.isFinite(n))) return M * 60 + S;
+    }
+    const onlyS = s.match(/^(\d+)\s*s$/);
+    if (onlyS) return parseInt(onlyS[1], 10);
+    return 0;
+  }
+
+  function linkifyTimestamps(container){
+    const RX = /\b(?:\(?\[?)?(?:\d{1,2}:\d{2}(?::\d{2})?|\d+h\d+m\d+s|\d+m\d+s|\d+s)(?:\]?\)?)\b/ig;
+    const nodes = [...container.querySelectorAll('p, li, h1, h2, h3, h4, .card, .angle')];
+    nodes.forEach(node=>{
+      if (!node.childNodes) return;
+      if (node.querySelector('a[data-seconds]')) return;
+      const html = node.innerHTML;
+      if (!RX.test(html)) return;
+      node.innerHTML = html.replace(RX, m => {
+        const secs = parseTimestampToSeconds(m);
+        if (!secs) return m;
+        const label = m.replace(/^[([ ]*|[)\] ]*$/g,'');
+        return `<a href="#t=${encodeURIComponent(label)}" data-seconds="${secs}" class="ts-link">${label}</a>`;
+      });
+    });
+    container.addEventListener('click', (e)=>{
+      const a = e.target.closest('a[data-seconds]');
+      if(!a) return;
+      e.preventDefault();
+      const secs = parseInt(a.getAttribute('data-seconds') || '0', 10);
+      if (secs > 0) seekTo(secs);
+    }, { passive:false });
+  }
+
+  function seekLocal(seconds) {
+    return new Promise(resolve=>{
+      const v = els.videoPreview;
+      if (!v || !v.src) return resolve(false);
+      const go = () => {
+        try {
+          v.currentTime = seconds;
+          v.play().catch(()=>{});
+          v.scrollIntoView({ behavior:'smooth', block:'center' });
+          resolve(true);
+        } catch {
+          resolve(false);
+        }
+      };
+      if (v.readyState >= 1) return go();
+      const onMeta = () => { v.removeEventListener('loadedmetadata', onMeta); go(); };
+      v.addEventListener('loadedmetadata', onMeta, { once:true });
+    });
+  }
+  function seekYouTube(seconds) {
+    return new Promise(resolve=>{
+      const yti = els.ytPreview;
+      if (!yti || !yti.contentWindow) return resolve(false);
+      const seekMsg = JSON.stringify({ event:'command', func:'seekTo', args:[seconds, true] });
+      const playMsg = JSON.stringify({ event:'command', func:'playVideo', args:[] });
+      const ORIGIN = 'https://www.youtube.com';
+      yti.contentWindow.postMessage(seekMsg, ORIGIN);
+      yti.contentWindow.postMessage(playMsg, ORIGIN);
+      yti.scrollIntoView({ behavior:'smooth', block:'center' });
+      resolve(true);
+    });
+  }
+  async function seekTo(seconds) {
+    if (await seekLocal(seconds)) return;
+    await seekYouTube(seconds);
+  }
+  function enhanceOutput(){
+    linkifyTimestamps(els.output);
+    try{
+      const triggers=['Shocking','Shock','Human','Empathy','Police','Procedural','Twist','Revelation','The '];
+      const ps=[...els.output.querySelectorAll('p')];
+      ps.forEach(p=>{
+        const t=(p.textContent||'').trim();
+        if(t && triggers.some(k=>t.startsWith(k))){
+          const wrap=document.createElement('div');
+          wrap.className='angle';
+          p.replaceWith(wrap);
+          wrap.appendChild(p);
+        }
+      });
+    }catch(_){}
   }
 
   async function readAsText(file){ const buf=await file.arrayBuffer(); return new TextDecoder("utf-8").decode(buf); }
@@ -298,7 +630,6 @@
     if(maxMB && file.size > maxMB*1024*1024) return {ok:false, msg:`File too large (> ${maxMB} MB)`};
     return {ok:true};
   }
-
   function bindJsonUploads(){
     const dz=els.dzJson, input=els.gsJson;
     dz.addEventListener("dragover",(e)=>{e.preventDefault(); setDZOver(dz,true);});
@@ -308,14 +639,12 @@
     els.btnPickJson.addEventListener("click",()=>input.click());
     input.addEventListener("change", async (e)=>{ const f=e.target.files?.[0]; await handleJsonFile(f); });
     els.btnClearJson.addEventListener("click",()=>{ localStorage.removeItem(LS_GS_JSON); els.gsJsonName.textContent="Not uploaded"; updateGSBadges(); setStatus("Cleared DATASET.json."); });
-
     async function handleJsonFile(f){
       const v=validateFile(f,{types:["json"], maxMB:20}); if(!v.ok){ setStatus('<span class="warn">'+v.msg+'</span>'); return; }
       try{ const txt=await readAsText(f); JSON.parse(txt); localStorage.setItem(LS_GS_JSON, txt); els.gsJsonName.textContent=f.name+" ✓"; updateGSBadges(); setStatus("Saved DATASET.json."); }
       catch{ setStatus('<span class="err">Invalid JSON file.</span>'); }
     }
   }
-
   function bindCsvUploads(){
     const dz=els.dzCsv, input=els.gsCsv;
     dz.addEventListener("dragover",(e)=>{e.preventDefault(); setDZOver(dz,true);});
@@ -324,14 +653,12 @@
     els.btnPickCsv.addEventListener("click",()=>input.click());
     input.addEventListener("change", async (e)=>{ const f=e.target.files?.[0]; await handleCsvFile(f); });
     els.btnClearCsv.addEventListener("click",()=>{ localStorage.removeItem(LS_GS_CSV); els.gsCsvName.textContent="Not uploaded"; updateGSBadges(); setStatus("Cleared Top10 CSV."); });
-
     async function handleCsvFile(f){
       const v=validateFile(f,{types:["csv"], maxMB:20}); if(!v.ok){ setStatus('<span class="warn">'+v.msg+'</span>'); return; }
       try{ const txt=await readAsText(f); localStorage.setItem(LS_GS_CSV, txt); els.gsCsvName.textContent=f.name+" ✓"; updateGSBadges(); setStatus("Saved Top10 CSV."); }
       catch{ setStatus('<span class="err">Failed to read CSV.</span>'); }
     }
   }
-
   function bindDocUploads(){
     const dz=els.dzDoc, input=els.gsDoc;
     dz.addEventListener("dragover",(e)=>{e.preventDefault(); setDZOver(dz,true);});
@@ -340,7 +667,6 @@
     els.btnPickDoc.addEventListener("click",()=>input.click());
     input.addEventListener("change", async (e)=>{ const f=e.target.files?.[0]; await handleDocFile(f); });
     els.btnClearDoc.addEventListener("click",()=>{ localStorage.removeItem(LS_GS_DOCX); els.gsDocName.textContent="Not uploaded"; updateGSBadges(); setStatus("Cleared Keywords DOCX."); });
-
     async function handleDocFile(f){
       const v=validateFile(f,{types:["docx"], maxMB:30}); if(!v.ok){ setStatus('<span class="warn">'+v.msg+'</span>'); return; }
       try{ const b64=await readAsBase64(f); localStorage.setItem(LS_GS_DOCX,b64); els.gsDocName.textContent=f.name+" ✓"; updateGSBadges(); setStatus("Saved Keywords DOCX."); }
@@ -348,29 +674,22 @@
     }
   }
 
-  // ---------- Server GS detection (kept) ----------
   let serverGSAvailable = false;
-
   async function fetchGSStatus() {
     try {
       const r = await fetch(`${API_BASE}/api/gs-status`);
-      if (!r.ok) throw new Error(`status ${r.status}`);
       const j = await r.json();
       serverGSAvailable = !!j?.serverGS?.all;
       if (serverGSAvailable) {
         els.gsStatus.textContent = 'GS: server';
         els.gsStatus.style.color = 'var(--ok)';
       }
-    } catch {
-      // ignore; client GS fallback will be used if available
-    }
+    } catch {}
   }
-
   function updateGSBadges(){
     const hasJson=!!localStorage.getItem(LS_GS_JSON);
     const hasCsv =!!localStorage.getItem(LS_GS_CSV);
     const hasDoc =!!localStorage.getItem(LS_GS_DOCX);
-
     if (serverGSAvailable) {
       els.gsStatus.textContent = 'GS: server';
       els.gsStatus.style.color = 'var(--ok)';
@@ -378,18 +697,222 @@
       els.gsStatus.textContent = `GS: ${hasJson&&hasCsv&&hasDoc?"loaded":"incomplete"}`;
       els.gsStatus.style.color = (hasJson&&hasCsv&&hasDoc)?"var(--ok)":"var(--warn)";
     }
-
     els.gsJsonName.textContent = hasJson? "DATASET.json ✓":"Not uploaded";
     els.gsCsvName .textContent = hasCsv ? "Top10 CSV ✓":"Not uploaded";
     els.gsDocName .textContent = hasDoc ? "Keywords .docx ✓":"Not uploaded";
   }
-
   async function readServerError(resp){
     try{ const j = await resp.json(); return j?.error || JSON.stringify(j); }
     catch{ try{ return await resp.text(); } catch { return '(no error body)'; } }
   }
 
+  /* ====== History Client ====== */
+  const SZ = ['B','KB','MB','GB','TB'];
+  function fmtB(b){ b=Number(b||0); if(!b) return '0 B'; const i=Math.floor(Math.log(b)/Math.log(1024)); return `${(b/Math.pow(1024,i)).toFixed(i>1?2:1)} ${SZ[i]}`; }
+  function hEsc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  let hStats = { limit: 20*1024*1024*1024, used: 0, remaining: 0, count: 0 };
+  let hLastNeeded = 0;
+
+  async function fetchHistStats(){
+    try{
+      const r = await fetch(`${API_BASE}/api/history-stats`);
+      const j = await r.json();
+      els.hUsed.textContent = fmtB(j.used);
+      els.hLimit.textContent = fmtB(j.limit);
+      const pct = Math.min(100, Math.round((j.used / j.limit) * 100));
+      els.hFill.style.width = pct + '%';
+      els.hFill.style.background = pct < 75 ? '#16a34a' : pct < 90 ? '#f59e0b' : '#dc2626';
+    }catch{}
+  }
+
+  // Title-only item; kebab menu handled by global flyout
+  function itemHTML(it){
+    const id = it.id;
+    const size = fmtB(it.size_bytes||0);
+    return `
+      <div class="hitem" data-id="${id}" data-title="${hEsc(it.title||'Untitled')}" data-size="${hEsc(size)}">
+        <div class="htitle" title="${hEsc(it.title||'Untitled')}">${hEsc(it.title||'Untitled')}</div>
+        <button class="hkebab" aria-haspopup="menu" aria-expanded="false" title="Options">⋯</button>
+      </div>`;
+  }
+
+  function bindMenus(scope){
+    const fly = document.getElementById('hFly');
+    const flySize = document.getElementById('hFlySize');
+
+    function closeFly(){
+      fly.classList.remove('open');
+      fly.style.display = 'none';
+      document.removeEventListener('mousedown', onOutside, true);
+      window.removeEventListener('resize', closeFly, { capture:true });
+      window.removeEventListener('scroll', closeFly, { capture:true });
+      window.removeEventListener('keydown', onEsc, true);
+    }
+    function onOutside(e){ if(!fly.contains(e.target)) closeFly(); }
+    function onEsc(e){ if(e.key === 'Escape') closeFly(); }
+
+    // open handlers for kebabs
+    scope.querySelectorAll('.hkebab').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+
+        const row = btn.closest('.hitem');
+        const id = row?.getAttribute('data-id');
+        const size = row?.getAttribute('data-size') || '0 KB';
+        const title = row?.getAttribute('data-title') || 'Untitled';
+
+        flySize.textContent = `Size: ${size}`;
+        fly.dataset.id = id;
+        fly.dataset.title = title;
+
+        // show to measure
+        fly.style.display = 'block';
+        fly.style.visibility = 'hidden';
+        fly.classList.add('open');
+
+        const r = btn.getBoundingClientRect();
+        const mw = fly.offsetWidth;
+        const mh = fly.offsetHeight;
+        const pad = 10;
+
+        // Prefer to open OUTSIDE to the right of the sidebar
+        const preferredLeft = r.right + 8;
+        const canOpenOutside = preferredLeft + mw <= window.innerWidth - pad;
+
+        const left = canOpenOutside
+          ? preferredLeft
+          : Math.min(window.innerWidth - mw - pad, Math.max(pad, r.right - mw)); // fallback inside
+
+        const top = Math.min(window.innerHeight - mh - pad, Math.max(pad, r.top));
+
+        fly.style.top  = `${top}px`;
+        fly.style.left = `${left}px`;
+        fly.style.visibility = 'visible';
+
+        // close behaviors
+        setTimeout(()=>{ document.addEventListener('mousedown', onOutside, true); }, 0);
+        window.addEventListener('resize', closeFly, { once:true, capture:true });
+        window.addEventListener('scroll', closeFly, { once:true, capture:true });
+        window.addEventListener('keydown', onEsc, true);
+      });
+    });
+
+    // actions inside flyout
+    fly.addEventListener('click', async (e)=>{
+      const act = e.target?.getAttribute('data-fly');
+      if(!act) return;
+
+      const id = fly.dataset.id;
+      const title = fly.dataset.title || 'item';
+
+      if (act === 'delete') {
+        if (!confirm(`Delete "${title}"? This cannot be undone.`)) { closeFly(); return; }
+        const r = await fetch(`${API_BASE}/api/history/${id}`, { method:'DELETE' });
+        if (!r.ok) { alert('Delete failed.'); closeFly(); return; }
+        await loadHistory(els.hQuery.value.trim());
+        closeFly();
+        return;
+      }
+
+      if (act === 'rename') {
+        const name = prompt('Rename item:', title);
+        if (name == null) { closeFly(); return; }
+        const r = await fetch(`${API_BASE}/api/history/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type':'application/json' },
+          body: JSON.stringify({ title: name })
+        });
+        if (!r.ok) { alert('Rename failed.'); closeFly(); return; }
+        await loadHistory(els.hQuery.value.trim());
+        closeFly();
+        return;
+      }
+
+      if (act === 'share') {
+        const url = `${API_BASE}/api/history/${id}/html`;
+        try {
+          await navigator.clipboard.writeText(url);
+          setStatus('<strong>Copied share link</strong> to clipboard.');
+        } catch {
+          prompt('Copy link:', url);
+        }
+        closeFly();
+      }
+    });
+  }
+
+  async function loadHistory(q=''){
+    await fetchHistStats();
+    const r = await fetch(`${API_BASE}/api/history?limit=100${q ? `&q=${encodeURIComponent(q)}`:''}`);
+    const j = await r.json();
+    els.hList.innerHTML = (j.items||[]).map(itemHTML).join('') || `<div style="padding:12px;color:var(--muted)">No history yet.</div>`;
+
+    // open item
+    els.hList.querySelectorAll('.hitem').forEach(row=>{
+      row.addEventListener('click', async (ev)=>{
+        if (ev.target.closest('.hkebab')) return; // ignore when kebab is clicked
+        const id = row.getAttribute('data-id');
+        const r = await fetch(`${API_BASE}/api/history/${id}`);
+        const j = await r.json();
+
+        if (j?.data?.html) {
+          const cleaned = normalizeHtml(j.data.html);
+          els.output.innerHTML = cleaned;
+          enhanceOutput();
+          setStatus(`Opened: ${j.meta?.title || id}`);
+        }
+
+        try {
+          const pb = j?.data?.meta?.input?.playback || null;
+
+          els.videoPreview.pause?.(); els.videoPreview.removeAttribute('src');
+          els.videoPreviewContainer.style.display = 'none';
+          els.ytPreview.src = ''; els.ytPreviewContainer.style.display = 'none';
+
+          if (pb?.kind === 'local' && pb?.url) {
+            switchInputMethod('local');
+            const absolute = pb.url.startsWith('http') ? pb.url : `${API_BASE}${pb.url}`;
+            els.videoPreview.src = absolute;
+            els.videoPreviewContainer.style.display = 'block';
+            els.videoPreview.load?.();
+          } else if (pb?.kind === 'youtube' && (pb.youtubeId || pb.url)) {
+            switchInputMethod('url');
+            if (pb.url) els.ytUrl.value = pb.url;
+            const vid = pb.youtubeId || '';
+            if (vid) {
+              els.ytPreview.src = `https://www.youtube.com/embed/${vid}?enablejsapi=1`;
+              els.ytPreviewContainer.style.display = 'block';
+            }
+          }
+        } catch {}
+      });
+    });
+
+    // kebab actions
+    bindMenus(els.hList);
+  }
+
+  // NOTE: Do NOT lock body scroll for history pane (so main page can scroll while open)
+  function toggleHist(open){
+    const willOpen = open ?? !els.histPane.classList.contains('open');
+    els.histPane.classList.toggle('open', willOpen);
+    // no body overflow change here
+  }
+  els.openHist.addEventListener('click', ()=> toggleHist());
+  els.closeHist.addEventListener('click', ()=> toggleHist(false));
+  els.hQuery.addEventListener('input', ()=> loadHistory(els.hQuery.value.trim()));
+  els.hBannerClose.addEventListener('click', ()=> els.hBanner.style.display='none');
+  els.hAutoPurge.addEventListener('click', async ()=>{
+    if (!hLastNeeded) return;
+    await fetch(`${API_BASE}/api/history/purge?mode=oldest&bytes=${hLastNeeded}`, { method:'POST' });
+    await loadHistory(els.hQuery.value.trim());
+    els.hBanner.style.display='none';
+    setStatus('Auto-purged oldest items.');
+  });
+
+  /* ======== run() with Queue + SSE ======== */
   async function run(){
+    let closeStream = null;
     try{
       const s=loadSettings()||hardDefaults;
       const strategistPrompt=(els.prompt.value.trim()||s.prompt);
@@ -412,25 +935,41 @@
       let gsKeywordsText = "";
       if(gsDocB64){ try{ gsKeywordsText=await docxBase64ToText(gsDocB64);}catch{} }
 
+      showProgress(true);
       setProgress(10,"<strong>Step 1/3:</strong> Preparing video…");
       els.runBtn.disabled=true;
 
-      let fileUri="", fileMime="video/mp4";
+      let fileUri="", fileMime="video/mp4", playback=null, displayName=null;
+
       if(currentInputMethod==='url'){
-        const r = await fetch(`${API_BASE}/api/fetch-youtube`, {
+        const q1 = await createQueueTicket();
+        closeStream = attachQueueStream(q1, { labelWhileActive: 'Fetching YouTube video…' });
+
+        const r = await fetch(`${API_BASE}/api/fetch-youtube?qid=${encodeURIComponent(q1)}`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({ url: els.ytUrl.value.trim() })
         });
+        try{ closeStream(); }catch{}
         if(!r.ok) throw new Error(`YouTube fetch failed: ${r.status} — ${await readServerError(r)}`);
+
         const j = await r.json();
         fileUri = j.fileUri; fileMime = j.mimeType || j.fileMime || fileMime;
+        playback = j.playback || null;
+        displayName = j.displayName || null;
         if(!fileUri) throw new Error('fileUri missing from /api/fetch-youtube');
+
+        if (playback && playback.kind === 'youtube' && playback.youtubeId) {
+          els.ytPreview.src = `https://www.youtube.com/embed/${playback.youtubeId}?enablejsapi=1`;
+          els.ytPreviewContainer.style.display = 'block';
+        }
       }else{
         const fd = new FormData(); fd.append('video', localFile, localFile.name);
         const r = await fetch(`${API_BASE}/api/upload-video`, { method:'POST', body: fd });
         if(!r.ok) throw new Error(`Video upload failed: ${r.status} — ${await readServerError(r)}`);
         const j = await r.json();
         fileUri = j.fileUri; fileMime = j.mimeType || j.fileMime || fileMime;
+        playback = j.playback || null;
+        displayName = j.displayName || localFile.name || null;
         if(!fileUri) throw new Error('fileUri missing from /api/upload-video');
       }
 
@@ -441,20 +980,25 @@
         strategistPrompt,
         topic: els.topic.value.trim(),
         titleHint: els.titleHint.value.trim(),
-        contextText: els.contextNotes.value.trim()
+        contextText: els.contextNotes.value.trim(),
+        playback, displayName
       };
-      // Keep your original fallback: attach browser GS ONLY if server GS is unavailable
       if (!serverGSAvailable) {
         body.gsJson = gsJsonStr;
         body.gsCsv = gsCsvStr;
         body.gsKeywordsText = gsKeywordsText;
       }
 
-      const gen = await fetch(`${API_BASE}/api/generate`, {
+      const q2 = await createQueueTicket();
+      closeStream = attachQueueStream(q2, { labelWhileActive: 'Generating…' });
+
+      const gen = await fetch(`${API_BASE}/api/generate?qid=${encodeURIComponent(q2)}`, {
         method:'POST',
         headers:{ 'Content-Type':'application/json' },
         body: JSON.stringify(body)
       });
+
+      try{ closeStream(); }catch{}
       if(!gen.ok) throw new Error(`Generate failed: ${gen.status} — ${await readServerError(gen)}`);
 
       const data = await gen.json();
@@ -462,12 +1006,34 @@
       setProgress(85,"<strong>Step 3/3:</strong> Formatting output…");
       const cleaned = normalizeHtml(data.html || "");
       els.output.innerHTML = cleaned || "<p>No content returned. Check your prompt and inputs.</p>";
+      enhanceOutput();
       setProgress(100,"<strong>Done.</strong> Generated 10 packages.");
       els.runBtn.disabled=false;
+      showProgress(false);
+
+      try{
+        if (data?.storage) {
+          const j = data.storage;
+          els.hUsed.textContent = fmtB(j.used);
+          els.hLimit.textContent = fmtB(j.limit);
+          const pct = Math.min(100, Math.round((j.used / j.limit) * 100));
+          els.hFill.style.width = pct + '%';
+          els.hFill.style.background = pct < 75 ? '#16a34a' : pct < 90 ? '#f59e0b' : '#dc2626';
+        }
+        if (data?.history?.saved) {
+          await loadHistory(els.hQuery.value.trim());
+          setStatus("Saved to history.");
+        } else if (data?.history?.reason === 'STORAGE_LIMIT_EXCEEDED') {
+          hLastNeeded = Number(data.history.needed || 0);
+          els.hBanner.style.display = 'block';
+          setStatus('<span class="warn">Storage full — open History to purge old items.</span>');
+        }
+      } catch {}
     }catch(err){
       console.error(err);
       setStatus(`<span class="err">${err.message||String(err)}</span>`);
       setProgress(0);
+      showProgress(false);
       els.runBtn.disabled=false;
     }
   }
@@ -478,7 +1044,6 @@
     saveSettings(v); updateGSBadges(); setStatus("Settings saved.");
     toggleSettings(false);
   });
-
   els.runBtn.addEventListener("click",run);
   els.copyBtn.addEventListener("click", async ()=>{
     const html=els.output.innerHTML||"";
@@ -493,7 +1058,7 @@
     }
   });
 
-  // Export to DOCX (unchanged)
+  // DOCX export (unchanged)
   els.saveDocBtn.addEventListener("click", async ()=>{
     const container = els.output;
     if(!container || !container.innerHTML || /Run the generator/i.test(container.innerHTML)){
@@ -514,7 +1079,6 @@
         return;
       }
       if(!(node instanceof HTMLElement)) return;
-
       const tag = node.tagName.toLowerCase();
       if(tag==='h1'||tag==='h2'||tag==='h3'){
         const txt = node.textContent?.trim() || '';
@@ -522,8 +1086,7 @@
         return;
       }
       if(tag==='p'){
-        docChildren.push(para(node.textContent||''));
-        return;
+        docChildren.push(para(node.textContent||'')); return;
       }
       if(tag==='ul'||tag==='ol'){
         const items = Array.from(node.querySelectorAll(':scope > li'));
@@ -537,7 +1100,7 @@
         });
         return;
       }
-      if(tag==='hr'){ docChildren.push(new docx.Paragraph({})); return; }
+      if(tag==='hr'){ docChildren.push(para({})); return; }
       Array.from(node.childNodes).forEach(walk);
     }
     children.forEach(walk);
@@ -568,6 +1131,7 @@
     switchInputMethod('url');
     await fetchGSStatus();
     updateGSBadges();
+    await loadHistory();
     setStatus("Ready.");
     bindJsonUploads(); bindCsvUploads(); bindDocUploads();
   })();
