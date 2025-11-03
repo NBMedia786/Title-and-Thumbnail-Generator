@@ -11,3 +11,5 @@ bin/
 .idea/
 Thumbs.db
 .DS_Store
+# Ignore yt-dlp authentication file
+assets/deployment_cookies.txt
