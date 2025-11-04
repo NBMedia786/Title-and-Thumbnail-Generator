@@ -6757,6 +6757,8 @@
 
 
 
+//// YT URL INTEGRATED
+
 
 // server.js
 import 'dotenv/config';
@@ -7184,7 +7186,7 @@ await loadServerGS();
 function buildGSIngestParts(gsJsonStr, gsCsvStr, keywordsFullText) {
   const parts = [];
   parts.push({ text:
-    "TAKE THESE AS GOLD STANDARD TITLES AND THUMBNAILS ALONG WITH ALL THE VIRAL IMPORTANT KEYWORDS ATTACHED. THESE ARE THE TOP PERFORMING VIDEOS. KEEP THESE IN YOUR MEMORY."
+    "TAKE THESE AS GOLD STANDARD TITLES AND THUMBNAILS ALONG WITH ALL THE VIRAL IMPORTANT KEYWORDS ATTACHED.THESE ARE THE TOP PERFORMING VIDEOS AND HAVE BEST TITLES AND THUMBNAILS.ANALYSE THESE AND KEEP THESE IN YOUR MEMORY FIRST "
   });
 
   const append = (label, raw, size = 24000) => {
@@ -7811,7 +7813,7 @@ app.post('/api/generate', queuedRouteWithSSE(async (req, res) => {
     const chat = model.startChat({
       history: historyMsgs,
       generationConfig: {
-        temperature: 0.35,
+        temperature: 0,
         topP: 0.9,
         topK: 40,
         candidateCount: 1,
