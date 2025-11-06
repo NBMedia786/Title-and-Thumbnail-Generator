@@ -44,15 +44,35 @@
   .status{margin-top:16px; font-size:14px; color:var(--muted); font-weight:500}
   .progress{height:10px; width:100%; background:var(--fieldbg); border:1px solid var(--border); border-radius:999px; overflow:hidden}
   .bar{height:100%; width:0%; background:linear-gradient(90deg,var(--brand),var(--accent)); transition:width .35s ease}
+
+  /* ==== OUTPUT AREA — HARD LOCKS ==== */
   .out{white-space:normal; line-height:1.55; color:#eaf0ff; font-size:15px}
-  .out h1,.out h2,.out h3{font-weight:700; color:var(--text)}
+  /* Force EVERYTHING inside output to bright white */
+  .out, .out * { color:#e8ecf4 !important; }
+  /* Do not allow muted/sub look inside output */
+  .out .sub, .out .muted { color:#e8ecf4 !important; opacity:1 !important; }
+  /* Clickable links style */
+  .out a { color: var(--brand-light) !important; text-decoration: underline; }
+  /* Headings still look like headings */
+  .out h1,.out h2,.out h3{font-weight:700}
   .out h1{font-size:22px; margin:14px 0 8px}
-  .out h2{font-size:19px; margin:14px 0 8px; border-bottom:1px solid var(--border); padding-bottom:6px}
+  .out h2{font-size:19px; margin:14px 0 8px; padding-bottom:6px}
   .out h3{font-size:16px; margin:12px 0 6px}
   .out p{margin:6px 0}
   .out ul,.out ol{margin:6px 0 6px 18px; padding:0}
   .out hr{border:none; border-top:1px solid var(--border-light); margin:12px 0}
   .ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:var(--err)}
+
+  /* White-boundary “cards” around every logical section of the output */
+  .out-card{
+    background:linear-gradient(180deg,var(--panel),var(--panel-2));
+    border:1.5px solid rgba(232,236,244,.15);
+    border-radius:14px;
+    padding:16px 18px;
+    margin:12px 0;
+    box-shadow:0 8px 20px rgba(0,0,0,.28);
+  }
+  .out-card + .out-card { margin-top:14px; }
 
   /* ===== Settings slide-in sheet & backdrop ===== */
   .sheet-backdrop{
@@ -134,8 +154,17 @@
   .hmenu .action:hover { background:#151a23; }
   .hmenu .danger { color:#fca5a5; }
 
-  /* Progress overlay */
   @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* ===== Progress Log (visible by default) ===== */
+  .uplog {
+    margin-top:8px; padding:10px 12px; border:1px solid var(--border);
+    background:var(--fieldbg); border-radius:12px; font-size:12px; color:var(--muted);
+    max-height:160px; overflow:auto; white-space:pre-wrap; line-height:1.4;
+  }
+  .uplog strong{ color: var(--text); }
+  .uplog .ok{ color: var(--ok); }
+  .uplog .err{ color: var(--err); }
 </style>
 </head>
 <body>
@@ -196,11 +225,15 @@
 
       <div class="btnbar">
         <button class="primary" id="runBtn">Generate 10 Packages</button>
+        <span id="queueBadge" class="pill" style="display:none">In queue…</span>
         <button class="ghost" id="copyBtn">Copy Output</button>
         <button class="ghost" id="saveDocBtn">Download DOCX</button>
       </div>
+
       <div id="status" class="status" aria-live="polite">Ready.</div>
       <div class="progress" style="margin-top:10px"><div class="bar" id="bar"></div></div>
+      <!-- Visible-by-default upload/activity log -->
+      <div id="uplog" class="uplog" aria-live="polite"></div>
     </div>
   </section>
 
@@ -306,6 +339,7 @@
     </div>
     <div class="progress"><div class="bar" id="modalBar"></div></div>
     <div id="modalStatus" class="status" style="margin-top:10px">Connecting…</div>
+    <div id="modalLog" class="uplog" style="margin-top:10px;"></div>
   </div>
 </div>
 
@@ -346,6 +380,7 @@
     btnClearJson:$("btnClearJson"), btnClearCsv:$("btnClearCsv"), btnClearDoc:$("btnClearDoc"),
     gsJson:$("gsJson"), gsCsv:$("gsCsv"), gsDoc:$("gsDoc"),
     gsJsonName:$("gsJsonName"), gsCsvName:$("gsCsvName"), gsDocName:$("gsDocName"),
+    queueBadge:$("queueBadge"),
     saveDocBtn: $("saveDocBtn"),
 
     /* History UI */
@@ -353,6 +388,13 @@
     hUsed:$("hUsed"), hLimit:$("hLimit"), hFill:$("hFill"),
     hList:$("hList"), hQuery:$("hQuery"),
     hBanner:$("hBanner"), hAutoPurge:$("hAutoPurge"), hBannerClose:$("hBannerClose"),
+
+    /* Logs */
+    uplog: $("uplog"),
+    modal: $("progressOverlay"),
+    modalBar: $("modalBar"),
+    modalStatus: $("modalStatus"),
+    modalLog: $("modalLog"),
   };
 
   const LS_KEY="tt_generator_singlefile_settings_v3";
@@ -398,21 +440,34 @@
 
   function setStatus(msg){ els.status.innerHTML=msg; }
 
-  // Progress overlay
-  const modal = document.getElementById('progressOverlay');
-  const modalBar = document.getElementById('modalBar');
-  const modalStatus = document.getElementById('modalStatus');
-  function showProgress(show){ modal.style.display = show ? 'grid' : 'none'; }
+  // ---- Progress overlay helpers + logs ----
+  function showProgress(show){ els.modal.style.display = show ? 'grid' : 'none'; }
+  function clampPct(n){ return Math.max(0, Math.min(100, n|0)); }
   function setProgress(pct,msg){
-    const pctClamped = Math.max(0, Math.min(100, pct|0));
+    const pctClamped = clampPct(pct);
     els.bar.style.width = pctClamped + "%";
-    modalBar.style.width = pctClamped + "%";
-    if (msg){ els.status.innerHTML = msg; modalStatus.textContent = msg.replace(/<[^>]+>/g,''); }
+    els.modalBar.style.width = pctClamped + "%";
+    if (msg){
+      els.status.innerHTML = msg;
+      els.modalStatus.textContent = msg.replace(/<[^>]+>/g,'');
+    }
+  }
+  function log(line, kind='info'){
+    const t = new Date().toLocaleTimeString();
+    const el = document.createElement('div');
+    el.innerHTML = `<strong>[${t}]</strong> ${line}`;
+    if(kind==='ok') el.classList.add('ok');
+    if(kind==='err') el.classList.add('err');
+    els.uplog.appendChild(el.cloneNode(true));
+    els.uplog.scrollTop = els.uplog.scrollHeight;
+    els.modalLog.appendChild(el);
+    els.modalLog.scrollTop = els.modalLog.scrollHeight;
+    if(kind==='err') console.error(line); else console.log(line);
   }
 
   /* ========= Queue helpers (SSE) ========= */
   async function createQueueTicket() {
-    const r = await fetch(`${API_BASE}/api/queue/ticket`, { method: 'POST' });
+    const r = await fetch(`${API_BASE}/api/queue/ticket`, { method: 'POST', cache:'no-store' });
     if (!r.ok) throw new Error(`Ticket failed: ${r.status}`);
     const j = await r.json();
     if (!j?.id) throw new Error('No ticket id');
@@ -429,12 +484,19 @@
       return '<strong>Step 3/3:</strong> Formatting output…';
     return msg || 'Processing…';
   }
+
   function attachQueueStream(id, { labelWhileActive = 'Processing…' } = {}) {
     const es = new EventSource(`${API_BASE}/api/queue/${id}/stream`);
     const setMapped = (pct, msg, phase) => {
       const nice = mapProgressLabel(msg || labelWhileActive, phase);
       setProgress(Math.max(5, pct|0), nice);
+      log(nice);
+      if (els.queueBadge) {
+        els.queueBadge.style.display = 'inline-flex';
+        els.queueBadge.textContent = nice.replace(/<[^>]+>/g,'');
+      }
     };
+
     es.addEventListener('snapshot', (ev) => {
       const snap = JSON.parse(ev.data || '{}');
       if (snap.state === 'active') {
@@ -444,29 +506,53 @@
       } else {
         const pos = snap.position || 1;
         setProgress(5, `In queue… (#${pos})`);
+        log(`In queue… (#${pos})`);
+        if (els.queueBadge) {
+          els.queueBadge.style.display = 'inline-flex';
+          els.queueBadge.textContent = `In queue… (#${pos})`;
+        }
       }
     });
+
     es.addEventListener('queued', (ev) => {
       const { position } = JSON.parse(ev.data || '{}');
       setProgress(5, `In queue… (#${position||1})`);
+      log(`In queue… (#${position||1})`);
+      if (els.queueBadge) {
+        els.queueBadge.style.display = 'inline-flex';
+        els.queueBadge.textContent = `In queue… (#${position||1})`;
+      }
     });
+
     es.addEventListener('started', (ev) => {
       const { progress } = JSON.parse(ev.data || '{}');
       setMapped(progress?.pct ?? 10, progress?.msg || labelWhileActive, 'active');
     });
+
     es.addEventListener('progress', (ev) => {
       const { progress } = JSON.parse(ev.data || '{}');
       setMapped(progress?.pct ?? 10, progress?.msg || labelWhileActive, 'active');
     });
+
     es.addEventListener('done', () => {
       setProgress(100, '<strong>Done.</strong>');
+      log('Done.', 'ok');
+      if (els.queueBadge) els.queueBadge.style.display = 'none';
       es.close();
     });
+
     es.addEventListener('failed', (ev) => {
       const { error } = JSON.parse(ev.data || '{}');
-      setProgress(0, `<span class="err">Failed: ${error || 'error'}</span>`);
+      const msg = `Failed: ${error || 'error'}`;
+      setProgress(0, `<span class="err">${msg}</span>`);
+      log(msg, 'err');
+      if (els.queueBadge) {
+        els.queueBadge.style.display = 'inline-flex';
+        els.queueBadge.textContent = 'Failed';
+      }
       es.close();
     });
+
     return () => es.close();
   }
 
@@ -493,7 +579,7 @@
     const url=URL.createObjectURL(f); els.videoPreview.src=url; els.videoPreviewContainer.style.display='block';
   });
 
-  /* Normalization + linkify for timestamps */
+  /* Normalization + linkify for timestamps (robust) */
   function normalizeHtml(rawHtml){
     if(!rawHtml) return "";
     let s = rawHtml.replace(/^```(?:html|markdown|md)?\s*|```\s*$/gi,"").trim();
@@ -505,6 +591,8 @@
     const parser = new DOMParser();
     const doc = parser.parseFromString(s, "text/html");
     doc.body.querySelectorAll("script,style").forEach(n=>n.remove());
+    // strip inline styles to prevent any color/size overrides
+    doc.body.querySelectorAll('[style]').forEach(n=>n.removeAttribute('style'));
     const html = doc.body.innerHTML.replace(/(\s*<br\s*\/?>\s*){2,}/gi,"<br>");
     return html.trim();
   }
@@ -553,46 +641,109 @@
       if(!a) return;
       e.preventDefault();
       const secs = parseInt(a.getAttribute('data-seconds') || '0', 10);
-      if (secs > 0) seekTo(secs);
+      if (secs > 0) seekTo(secs, { pause:true });
     }, { passive:false });
+  }
+
+  /* === Output section wrapper for consistent white-border cards === */
+  function enforceOutputLayout() {
+    const root = els.output;
+    if (!root) return;
+
+    // remove forced muted classes inside output
+    root.querySelectorAll('.sub, .muted').forEach(n=>{
+      n.classList.remove('sub','muted');
+    });
+
+    // wrap logical blocks into .out-card
+    const blocks = [];
+    let current = null;
+
+    const children = Array.from(root.childNodes).filter(n => {
+      // skip whitespace-only text nodes
+      return !(n.nodeType === Node.TEXT_NODE && !n.textContent.trim());
+    });
+
+    const isStart = (el) => {
+      if (!(el instanceof HTMLElement)) return false;
+      const tag = el.tagName.toLowerCase();
+      return tag === 'h1' || tag === 'h2' || tag === 'hr';
+    };
+
+    children.forEach(node => {
+      if (!current || (node instanceof HTMLElement && isStart(node))) {
+        current = document.createElement('div');
+        current.className = 'out-card';
+        blocks.push(current);
+      }
+      current.appendChild(node);
+    });
+
+    // rewrite DOM only if we actually grouped something
+    if (blocks.length) {
+      root.innerHTML = '';
+      blocks.forEach(b => root.appendChild(b));
+    }
   }
 
   function seekLocal(seconds) {
     return new Promise(resolve=>{
       const v = els.videoPreview;
       if (!v || !v.src) return resolve(false);
-      const go = () => {
-        try {
-          v.currentTime = seconds;
-          v.play().catch(()=>{});
-          v.scrollIntoView({ behavior:'smooth', block:'center' });
-          resolve(true);
-        } catch {
-          resolve(false);
-        }
+
+      const cleanup = ()=>{
+        v.removeEventListener('loadedmetadata', onMeta);
+        v.removeEventListener('seeked', onSeeked);
       };
-      if (v.readyState >= 1) return go();
-      const onMeta = () => { v.removeEventListener('loadedmetadata', onMeta); go(); };
-      v.addEventListener('loadedmetadata', onMeta, { once:true });
+      const onSeeked = ()=>{
+        try { v.pause(); } catch {}
+        try { v.currentTime = seconds; } catch {}
+        cleanup();
+        v.scrollIntoView({ behavior:'smooth', block:'center' });
+        resolve(true);
+      };
+      const onMeta = ()=>{
+        try { v.currentTime = seconds; } catch {}
+        const tryPauseFrame = ()=>{
+          try { v.pause(); } catch {}
+          v.addEventListener('seeked', onSeeked, { once:true });
+          try { v.currentTime = seconds; } catch {}
+        };
+        if (v.readyState >= 2) tryPauseFrame(); else tryPauseFrame();
+      };
+
+      if (v.readyState >= 1) onMeta();
+      else v.addEventListener('loadedmetadata', onMeta, { once:true });
     });
   }
+
   function seekYouTube(seconds) {
     return new Promise(resolve=>{
       const yti = els.ytPreview;
       if (!yti || !yti.contentWindow) return resolve(false);
-      const seekMsg = JSON.stringify({ event:'command', func:'seekTo', args:[seconds, true] });
-      const playMsg = JSON.stringify({ event:'command', func:'playVideo', args:[] });
       const ORIGIN = 'https://www.youtube.com';
-      yti.contentWindow.postMessage(seekMsg, ORIGIN);
-      yti.contentWindow.postMessage(playMsg, ORIGIN);
+
+      const seekMsg  = JSON.stringify({ event:'command', func:'seekTo', args:[seconds, true] });
+      const playMsg  = JSON.stringify({ event:'command', func:'playVideo', args:[] });
+      const pauseMsg = JSON.stringify({ event:'command', func:'pauseVideo', args:[] });
+
+      try {
+        yti.contentWindow.postMessage(seekMsg, ORIGIN);
+        setTimeout(()=>yti.contentWindow.postMessage(playMsg, ORIGIN), 30);
+        setTimeout(()=>yti.contentWindow.postMessage(pauseMsg, ORIGIN), 90);
+      } catch {}
+
       yti.scrollIntoView({ behavior:'smooth', block:'center' });
       resolve(true);
     });
   }
-  async function seekTo(seconds) {
-    if (await seekLocal(seconds)) return;
+
+  async function seekTo(seconds, opts={ pause:true }) {
+    const doneLocal = await seekLocal(seconds);
+    if (doneLocal) return;
     await seekYouTube(seconds);
   }
+
   function enhanceOutput(){
     linkifyTimestamps(els.output);
     try{
@@ -677,7 +828,7 @@
   let serverGSAvailable = false;
   async function fetchGSStatus() {
     try {
-      const r = await fetch(`${API_BASE}/api/gs-status`);
+      const r = await fetch(`${API_BASE}/api/gs-status`, { cache:'no-store' });
       const j = await r.json();
       serverGSAvailable = !!j?.serverGS?.all;
       if (serverGSAvailable) {
@@ -709,13 +860,12 @@
   /* ====== History Client ====== */
   const SZ = ['B','KB','MB','GB','TB'];
   function fmtB(b){ b=Number(b||0); if(!b) return '0 B'; const i=Math.floor(Math.log(b)/Math.log(1024)); return `${(b/Math.pow(1024,i)).toFixed(i>1?2:1)} ${SZ[i]}`; }
-  function hEsc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-  let hStats = { limit: 20*1024*1024*1024, used: 0, remaining: 0, count: 0 };
+  function hEsc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]) ); }
   let hLastNeeded = 0;
 
   async function fetchHistStats(){
     try{
-      const r = await fetch(`${API_BASE}/api/history-stats`);
+      const r = await fetch(`${API_BASE}/api/history-stats`, { cache:'no-store' });
       const j = await r.json();
       els.hUsed.textContent = fmtB(j.used);
       els.hLimit.textContent = fmtB(j.limit);
@@ -725,7 +875,6 @@
     }catch{}
   }
 
-  // Title-only item; kebab menu handled by global flyout
   function itemHTML(it){
     const id = it.id;
     const size = fmtB(it.size_bytes||0);
@@ -751,7 +900,6 @@
     function onOutside(e){ if(!fly.contains(e.target)) closeFly(); }
     function onEsc(e){ if(e.key === 'Escape') closeFly(); }
 
-    // open handlers for kebabs
     scope.querySelectorAll('.hkebab').forEach(btn=>{
       btn.addEventListener('click', (e)=>{
         e.stopPropagation();
@@ -765,7 +913,6 @@
         fly.dataset.id = id;
         fly.dataset.title = title;
 
-        // show to measure
         fly.style.display = 'block';
         fly.style.visibility = 'hidden';
         fly.classList.add('open');
@@ -775,13 +922,12 @@
         const mh = fly.offsetHeight;
         const pad = 10;
 
-        // Prefer to open OUTSIDE to the right of the sidebar
         const preferredLeft = r.right + 8;
         const canOpenOutside = preferredLeft + mw <= window.innerWidth - pad;
 
         const left = canOpenOutside
           ? preferredLeft
-          : Math.min(window.innerWidth - mw - pad, Math.max(pad, r.right - mw)); // fallback inside
+          : Math.min(window.innerWidth - mw - pad, Math.max(pad, r.right - mw));
 
         const top = Math.min(window.innerHeight - mh - pad, Math.max(pad, r.top));
 
@@ -789,7 +935,6 @@
         fly.style.left = `${left}px`;
         fly.style.visibility = 'visible';
 
-        // close behaviors
         setTimeout(()=>{ document.addEventListener('mousedown', onOutside, true); }, 0);
         window.addEventListener('resize', closeFly, { once:true, capture:true });
         window.addEventListener('scroll', closeFly, { once:true, capture:true });
@@ -797,7 +942,6 @@
       });
     });
 
-    // actions inside flyout
     fly.addEventListener('click', async (e)=>{
       const act = e.target?.getAttribute('data-fly');
       if(!act) return;
@@ -807,7 +951,7 @@
 
       if (act === 'delete') {
         if (!confirm(`Delete "${title}"? This cannot be undone.`)) { closeFly(); return; }
-        const r = await fetch(`${API_BASE}/api/history/${id}`, { method:'DELETE' });
+        const r = await fetch(`${API_BASE}/api/history/${id}`, { method:'DELETE', cache:'no-store' });
         if (!r.ok) { alert('Delete failed.'); closeFly(); return; }
         await loadHistory(els.hQuery.value.trim());
         closeFly();
@@ -818,7 +962,7 @@
         const name = prompt('Rename item:', title);
         if (name == null) { closeFly(); return; }
         const r = await fetch(`${API_BASE}/api/history/${id}`, {
-          method: 'PATCH',
+          method: 'PATCH', cache:'no-store',
           headers: { 'Content-Type':'application/json' },
           body: JSON.stringify({ title: name })
         });
@@ -843,28 +987,27 @@
 
   async function loadHistory(q=''){
     await fetchHistStats();
-    const r = await fetch(`${API_BASE}/api/history?limit=100${q ? `&q=${encodeURIComponent(q)}`:''}`);
+    const r = await fetch(`${API_BASE}/api/history?limit=100${q ? `&q=${encodeURIComponent(q)}`:''}`, { cache:'no-store' });
     const j = await r.json();
     els.hList.innerHTML = (j.items||[]).map(itemHTML).join('') || `<div style="padding:12px;color:var(--muted)">No history yet.</div>`;
 
-    // open item
     els.hList.querySelectorAll('.hitem').forEach(row=>{
       row.addEventListener('click', async (ev)=>{
-        if (ev.target.closest('.hkebab')) return; // ignore when kebab is clicked
+        if (ev.target.closest('.hkebab')) return;
         const id = row.getAttribute('data-id');
-        const r = await fetch(`${API_BASE}/api/history/${id}`);
+        const r = await fetch(`${API_BASE}/api/history/${id}`, { cache:'no-store' });
         const j = await r.json();
 
         if (j?.data?.html) {
           const cleaned = normalizeHtml(j.data.html);
           els.output.innerHTML = cleaned;
-          enhanceOutput();
+          enforceOutputLayout();   // <<< ensure white border cards
+          enhanceOutput();         // <<< timestamps + angles
           setStatus(`Opened: ${j.meta?.title || id}`);
         }
 
         try {
           const pb = j?.data?.meta?.input?.playback || null;
-
           els.videoPreview.pause?.(); els.videoPreview.removeAttribute('src');
           els.videoPreviewContainer.style.display = 'none';
           els.ytPreview.src = ''; els.ytPreviewContainer.style.display = 'none';
@@ -888,15 +1031,12 @@
       });
     });
 
-    // kebab actions
     bindMenus(els.hList);
   }
 
-  // NOTE: Do NOT lock body scroll for history pane (so main page can scroll while open)
   function toggleHist(open){
     const willOpen = open ?? !els.histPane.classList.contains('open');
     els.histPane.classList.toggle('open', willOpen);
-    // no body overflow change here
   }
   els.openHist.addEventListener('click', ()=> toggleHist());
   els.closeHist.addEventListener('click', ()=> toggleHist(false));
@@ -904,13 +1044,71 @@
   els.hBannerClose.addEventListener('click', ()=> els.hBanner.style.display='none');
   els.hAutoPurge.addEventListener('click', async ()=>{
     if (!hLastNeeded) return;
-    await fetch(`${API_BASE}/api/history/purge?mode=oldest&bytes=${hLastNeeded}`, { method:'POST' });
+    await fetch(`${API_BASE}/api/history/purge?mode=oldest&bytes=${hLastNeeded}`, { method:'POST', cache:'no-store' });
     await loadHistory(els.hQuery.value.trim());
     els.hBanner.style.display='none';
     setStatus('Auto-purged oldest items.');
   });
 
-  /* ======== run() with Queue + SSE ======== */
+  // ---------- XHR uploader with true progress (MB + %) ----------
+  function uploadLocalVideoWithProgress(file){
+    return new Promise((resolve,reject)=>{
+      const xhr = new XMLHttpRequest();
+      const url = `${API_BASE}/api/upload-video`;
+      const fd = new FormData();
+      fd.append('video', file, file.name);
+
+      let startTime = Date.now();
+      let lastLoaded = 0;
+
+      xhr.upload.onprogress = (e)=>{
+        if (!e.lengthComputable) {
+          setProgress(20, "<strong>Step 1/3:</strong> Preparing video…");
+          return;
+        }
+        const loaded = e.loaded;
+        const total  = e.total || file.size || 1;
+        const pct    = Math.max(1, Math.round((loaded/total)*45));
+        const now    = Date.now();
+        const dt     = (now - startTime)/1000;
+        const bytesPerSec = dt > 0 ? loaded / dt : 0;
+        const mbLoaded = (loaded/1024/1024).toFixed(1);
+        const mbTotal  = (total/1024/1024).toFixed(1);
+        const mbps     = (bytesPerSec/1024/1024).toFixed(2);
+
+        setProgress(pct, `<strong>Uploading…</strong> ${mbLoaded} MB / ${mbTotal} MB (${pct}%) — ${mbps} MB/s`);
+        if (loaded - lastLoaded > 512*1024) {
+          log(`Uploading… ${mbLoaded} MB / ${mbTotal} MB (${pct}%) — ${mbps} MB/s`);
+          lastLoaded = loaded;
+        }
+      };
+
+      xhr.onreadystatechange = ()=>{
+        if (xhr.readyState === 4) {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const j = JSON.parse(xhr.responseText || '{}');
+              log(`Upload complete. (${(file.size/1024/1024).toFixed(1)} MB)`, 'ok');
+              resolve(j);
+            } catch(err){
+              log('Upload succeeded but failed to parse response.', 'err');
+              reject(err);
+            }
+          } else {
+            const errTxt = xhr.responseText || `HTTP ${xhr.status}`;
+            log(`Upload failed: ${errTxt}`, 'err');
+            reject(new Error(errTxt));
+          }
+        }
+      };
+
+      xhr.onerror = ()=>{ log('Network error during upload.', 'err'); reject(new Error('Network error')); };
+      xhr.open('POST', url, true);
+      xhr.send(fd);
+    });
+  }
+
+  /* ======== run() with Queue + SSE and XHR upload ======== */
   async function run(){
     let closeStream = null;
     try{
@@ -935,18 +1133,24 @@
       let gsKeywordsText = "";
       if(gsDocB64){ try{ gsKeywordsText=await docxBase64ToText(gsDocB64);}catch{} }
 
+      // Reset logs for this run
+      els.uplog.textContent = '';
+      els.modalLog.textContent = '';
+
       showProgress(true);
       setProgress(10,"<strong>Step 1/3:</strong> Preparing video…");
       els.runBtn.disabled=true;
+      log('Starting run…');
 
       let fileUri="", fileMime="video/mp4", playback=null, displayName=null;
 
       if(currentInputMethod==='url'){
+        log('Creating queue ticket for YouTube fetch…');
         const q1 = await createQueueTicket();
         closeStream = attachQueueStream(q1, { labelWhileActive: 'Fetching YouTube video…' });
 
         const r = await fetch(`${API_BASE}/api/fetch-youtube?qid=${encodeURIComponent(q1)}`, {
-          method:'POST', headers:{'Content-Type':'application/json'},
+          method:'POST', cache:'no-store', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({ url: els.ytUrl.value.trim() })
         });
         try{ closeStream(); }catch{}
@@ -958,22 +1162,28 @@
         displayName = j.displayName || null;
         if(!fileUri) throw new Error('fileUri missing from /api/fetch-youtube');
 
+        log('YouTube video prepared. Proceeding to generation…', 'ok');
+
         if (playback && playback.kind === 'youtube' && playback.youtubeId) {
           els.ytPreview.src = `https://www.youtube.com/embed/${playback.youtubeId}?enablejsapi=1`;
           els.ytPreviewContainer.style.display = 'block';
         }
       }else{
-        const fd = new FormData(); fd.append('video', localFile, localFile.name);
-        const r = await fetch(`${API_BASE}/api/upload-video`, { method:'POST', body: fd });
-        if(!r.ok) throw new Error(`Video upload failed: ${r.status} — ${await readServerError(r)}`);
-        const j = await r.json();
+        // ---- XHR upload with progress display ----
+        log(`Uploading local file: ${localFile.name} (${(localFile.size/1024/1024).toFixed(1)} MB)…`);
+        setProgress(12, "<strong>Uploading…</strong> starting");
+        const j = await uploadLocalVideoWithProgress(localFile);
         fileUri = j.fileUri; fileMime = j.mimeType || j.fileMime || fileMime;
         playback = j.playback || null;
         displayName = j.displayName || localFile.name || null;
         if(!fileUri) throw new Error('fileUri missing from /api/upload-video');
+
+        setProgress(50, "<strong>Step 1/3:</strong> Upload complete.");
+        log('Local upload complete. Preparing to generate…', 'ok');
       }
 
       setProgress(55,"<strong>Step 2/3:</strong> Generating with Gemini…");
+      log('Creating queue ticket for generation…');
 
       const body = {
         fileUri, fileMime, videoSource,
@@ -993,7 +1203,7 @@
       closeStream = attachQueueStream(q2, { labelWhileActive: 'Generating…' });
 
       const gen = await fetch(`${API_BASE}/api/generate?qid=${encodeURIComponent(q2)}`, {
-        method:'POST',
+        method:'POST', cache:'no-store',
         headers:{ 'Content-Type':'application/json' },
         body: JSON.stringify(body)
       });
@@ -1004,34 +1214,37 @@
       const data = await gen.json();
 
       setProgress(85,"<strong>Step 3/3:</strong> Formatting output…");
+      log('Formatting model output…');
+
       const cleaned = normalizeHtml(data.html || "");
-      els.output.innerHTML = cleaned || "<p>No content returned. Check your prompt and inputs.</p>";
-      enhanceOutput();
+      els.output.innerHTML = cleaned;
+      enforceOutputLayout();  // ensure white-border cards + unmuted text
+      enhanceOutput();        // timestamps + angle wrapping
       setProgress(100,"<strong>Done.</strong> Generated 10 packages.");
+      log('Run complete.', 'ok');
       els.runBtn.disabled=false;
       showProgress(false);
 
       try{
         if (data?.storage) {
           const j = data.storage;
-          els.hUsed.textContent = fmtB(j.used);
-          els.hLimit.textContent = fmtB(j.limit);
-          const pct = Math.min(100, Math.round((j.used / j.limit) * 100));
-          els.hFill.style.width = pct + '%';
-          els.hFill.style.background = pct < 75 ? '#16a34a' : pct < 90 ? '#f59e0b' : '#dc2626';
+          els.hUsed.textContent = j.used ? `${(j.used/1024/1024).toFixed(2)} MB` : els.hUsed.textContent;
         }
         if (data?.history?.saved) {
           await loadHistory(els.hQuery.value.trim());
           setStatus("Saved to history.");
+          log('Saved to history.', 'ok');
         } else if (data?.history?.reason === 'STORAGE_LIMIT_EXCEEDED') {
           hLastNeeded = Number(data.history.needed || 0);
           els.hBanner.style.display = 'block';
           setStatus('<span class="warn">Storage full — open History to purge old items.</span>');
+          log('Storage limit exceeded. Please purge old history items.', 'err');
         }
       } catch {}
     }catch(err){
       console.error(err);
       setStatus(`<span class="err">${err.message||String(err)}</span>`);
+      log(err.message||String(err), 'err');
       setProgress(0);
       showProgress(false);
       els.runBtn.disabled=false;
@@ -1052,9 +1265,11 @@
       const blob = new Blob([html], {type: "text/html"});
       await navigator.clipboard.write([new ClipboardItem({ "text/html": blob })]);
       setStatus("<strong>Copied</strong> formatted HTML to clipboard.");
+      log('Copied HTML to clipboard.', 'ok');
     }catch{
       await navigator.clipboard.writeText(html);
       setStatus("<strong>Copied</strong> formatted HTML to clipboard.");
+      log('Copied HTML (fallback) to clipboard.', 'ok');
     }
   });
 
@@ -1065,7 +1280,7 @@
       alert("No output to export.");
       return;
     }
-    setStatus("Building DOCX…");
+    setStatus("Building DOCX…"); log('Building DOCX…');
 
     const children = Array.from(container.childNodes);
     const docChildren = [];
@@ -1123,7 +1338,7 @@
     document.body.appendChild(a);
     a.click();
     a.remove();
-    setStatus("DOCX downloaded.");
+    setStatus("DOCX downloaded."); log('DOCX downloaded.', 'ok');
   });
 
   (async function init(){
@@ -1134,6 +1349,7 @@
     await loadHistory();
     setStatus("Ready.");
     bindJsonUploads(); bindCsvUploads(); bindDocUploads();
+    log('UI initialized. Ready.');
   })();
 </script>
 </body>
