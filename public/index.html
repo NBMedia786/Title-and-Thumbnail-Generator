@@ -1068,7 +1068,7 @@
         }
         const loaded = e.loaded;
         const total  = e.total || file.size || 1;
-        const pct    = Math.max(1, Math.round((loaded/total)*45));
+        const pct    = Math.max(1, Math.round((loaded/total)*100));
         const now    = Date.now();
         const dt     = (now - startTime)/1000;
         const bytesPerSec = dt > 0 ? loaded / dt : 0;
