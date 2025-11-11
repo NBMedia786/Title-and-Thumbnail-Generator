@@ -6303,7 +6303,7 @@ import { execFile } from 'child_process';
 
 // Gemini SDK + docx
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import mammoth from 'mammoth';
+//import mammoth from 'mammoth';
 
 // ✅ Streaming multipart for large files (no RAM buffering)
 import FormData from 'form-data';
@@ -6763,11 +6763,24 @@ async function loadServerGS() {
       serverGS.csv = clip(txt, GS_CAP.csv);
       loaded.csv = true;
     }
-    if (GS_DOCX_PATH && await fileExists(GS_DOCX_PATH)) {
-      const kw = await loadDocxToText(GS_DOCX_PATH);
-      serverGS.kw = clip(kw, GS_CAP.kw);
-      loaded.kw = true;
+    // if (GS_DOCX_PATH && await fileExists(GS_DOCX_PATH)) {
+    //   const kw = await loadDocxToText(GS_DOCX_PATH);
+    //   serverGS.kw = clip(kw, GS_CAP.kw);
+    //   loaded.kw = true;
+    //}
+    //new
+      if (GS_DOCX_PATH && await fileExists(GS_DOCX_PATH)) {
+    const ext = path.extname(GS_DOCX_PATH).toLowerCase();
+    if (ext === '.txt') {
+      const txt = await readFile(GS_DOCX_PATH, 'utf-8');
+      serverGS.kw = clip(txt, GS_CAP.kw);
+    } else {
+      const buf = await readFile(GS_DOCX_PATH);
+      const { value } = await mammoth.extractRawText({ buffer: buf });
+      serverGS.kw = clip(value || '', GS_CAP.kw);
     }
+    loaded.kw = true;
+  }
   } catch (e) {
     console.error('❌ Failed loading server GS:', e?.message || e);
   }
