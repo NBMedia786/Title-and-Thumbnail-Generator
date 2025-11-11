@@ -6376,7 +6376,9 @@ const upload = multer({
 });
 
 const API_KEY = process.env.GOOGLE_API_KEY;
-const MODEL   = process.env.MODEL || 'gemini-2.5-pro';
+// const MODEL   = process.env.MODEL || 'gemini-2.5-pro';
+//new
+const MODEL   = (process.env.MODEL || 'gemini-2.5-pro').replace(/\r|\n/g, '').trim();
 const PORT    = process.env.PORT || 3002;
 
 const GS_JSON_PATH = process.env.GS_JSON_PATH || '';
@@ -7407,6 +7409,15 @@ app.post('/api/generate', queuedRouteWithSSE(async (req, res) => {
       gsJson = '', gsCsv = '', gsKeywordsText = '',
       playback = null
     } = req.body || {};
+    //new
+        // ——— Normalize inputs (protect against CR/LF and stray params on VPS) ———
+    const cleanFileUri = String(fileUri || '').replace(/\r|\n/g, '').trim();
+    const cleanMime    = String(fileMime || 'video/mp4').split(';')[0].trim();
+
+    // sanity guard: only proceed with a valid Files API URI
+    if (!/^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/files\//.test(cleanFileUri)) {
+      return res.status(400).json({ ok: false, error: 'fileUri is not a valid Files API URI' });
+    }
 
     console.log('▶️  /api/generate', {
       hasFileUri: !!fileUri,
@@ -7431,16 +7442,38 @@ app.post('/api/generate', queuedRouteWithSSE(async (req, res) => {
       systemInstruction: "Follow output format exactly; store gold-standard patterns internally; do not leak chain-of-thought."
     });
 
-    const historyMsgs = [
-      { role: 'user', parts: buildGSIngestParts(useJson, useCsv, useKw) },
-      {
-        role: 'user',
-        parts: [
-          { text: "\n\n---\nATTACHED VIDEO (analyze full visuals + audio)\n---\n" },
-          { fileData: { fileUri, mimeType: fileMime } }
-        ]
-      }
-    ];
+    // const historyMsgs = [
+    //   { role: 'user', parts: buildGSIngestParts(useJson, useCsv, useKw) },
+    //   {
+    //     role: 'user',
+    //     parts: [
+    //       { text: "\n\n---\nATTACHED VIDEO (analyze full visuals + audio)\n---\n" },
+    //       { fileData: { fileUri, mimeType: fileMime } }
+    //     ]
+    //   }
+    // ];
+
+    //new (replaced)
+
+      const historyMsgs = [
+    { role: 'user', parts: buildGSIngestParts(useJson, useCsv, useKw) },
+    {
+      role: 'user',
+      parts: [
+        { text: "\n\n---\nATTACHED VIDEO (analyze full visuals + audio)\n---\n" },
+        { fileData: { fileUri: cleanFileUri, mimeType: cleanMime } }
+      ]
+    }
+  ];
+
+  //new 
+
+    console.log('GENERATION BODY (preview) ->', JSON.stringify({
+    model: MODEL,
+    history_first_role: historyMsgs[0]?.role,
+    history_second_role: historyMsgs[1]?.role,
+    fileData: { fileUri: cleanFileUri, mimeType: cleanMime }
+    }, null, 2));
 
     const chat = model.startChat({
       history: historyMsgs,
