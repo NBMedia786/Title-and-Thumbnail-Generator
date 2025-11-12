@@ -1101,37 +1101,42 @@ app.post('/api/generate', queuedRouteWithSSE(async (req, res) => {
 
     
 
-    const historyMsgs = [
-      {
-        role: 'user',
-        parts: buildGSIngestParts(useJson, useCsv, useKw)
-      },
-      {
-        role: 'model',
-        parts: [
-          {
-            text: "Acknowledged. I have stored all Gold Standard patterns and keywords for reference."
-          }
-        ]
-      },
-      {
-        role: 'user',
-        parts: [
-          { text: "\n\n---\nATTACHED VIDEO (analyze full visuals + audio)\n---\n" },
-          { fileData: { fileUri: cleanFileUri, mimeType: cleanMime } },
-          ...buildFinalInstructionParts({ videoSource, topic, titleHint, strategistPrompt, contextText })
-        ]
+    req._queueProgress?.(30, 'model warmup and ingesting gold standard');
+
+    await model.generateContent({
+      contents: buildGSIngestParts(useJson, useCsv, useKw),
+      generationConfig: {
+        temperature: 0.01,
+        maxOutputTokens: 10,
+        candidateCount: 1
       }
+    });
+
+    const finalUserParts = [
+      { text: "\n\n---\nATTACHED VIDEO (analyze full visuals + audio)\n---\n" },
+      { fileData: { fileUri: cleanFileUri, mimeType: cleanMime } },
+      ...buildFinalInstructionParts({ videoSource, topic, titleHint, strategistPrompt, contextText })
     ];
 
-    console.log('GENERATION BODY (preview) ->', JSON.stringify({
-      model: MODEL,
-      history_roles: historyMsgs.map((m) => m.role),
-      fileData: { fileUri: cleanFileUri, mimeType: cleanMime }
-    }, null, 2));
-
     const chat = model.startChat({
-      history: historyMsgs,
+      history: [
+        {
+          role: 'user',
+          parts: [
+            {
+              text: "I have already loaded all gold-standard data for this session. Please proceed with the video analysis and task."
+            }
+          ]
+        },
+        {
+          role: 'model',
+          parts: [
+            {
+              text: "Understood. Proceeding."
+            }
+          ]
+        }
+      ],
       generationConfig: {
         temperature: 0,
         topP: 0.9,
@@ -1142,10 +1147,9 @@ app.post('/api/generate', queuedRouteWithSSE(async (req, res) => {
       }
     });
 
-    req._queueProgress?.(30, 'model warmup and ingestion');
-    req._queueProgress?.(55, 'analyzing video');
+    req._queueProgress?.(55, 'analyzing video and generating');
 
-    const result = await chat.sendMessage([{ text: "Proceed with analysis and generation." }]);
+    const result = await chat.sendMessage(finalUserParts);
 
     let raw = "";
     try { raw = result?.response?.text?.() || ""; } catch (e) { console.error("result.response.text() failed:", e); }
