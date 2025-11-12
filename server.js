@@ -1095,8 +1095,7 @@ app.post('/api/generate', queuedRouteWithSSE(async (req, res) => {
     const useKw   = serverGS.kw   || clip(gsKeywordsText, 100000);
 
     const model = genAI.getGenerativeModel({
-      model: `models/${MODEL}`,
-      systemInstruction: "Follow output format exactly; store gold-standard patterns internally; do not leak chain-of-thought."
+      model: `models/${MODEL}`
     });
 
     
@@ -1104,7 +1103,12 @@ app.post('/api/generate', queuedRouteWithSSE(async (req, res) => {
     req._queueProgress?.(30, 'model warmup and ingesting gold standard');
 
     await model.generateContent({
-      contents: buildGSIngestParts(useJson, useCsv, useKw),
+      contents: [
+        {
+          role: 'user',
+          parts: buildGSIngestParts(useJson, useCsv, useKw)
+        }
+      ],
       generationConfig: {
         temperature: 0.01,
         maxOutputTokens: 10,
@@ -1124,7 +1128,7 @@ app.post('/api/generate', queuedRouteWithSSE(async (req, res) => {
           role: 'user',
           parts: [
             {
-              text: "I have already loaded all gold-standard data for this session. Please proceed with the video analysis and task."
+              text: "Follow output format exactly; store gold-standard patterns internally; do not leak chain-of-thought. I have already loaded all gold-standard data for this session. Please proceed with the video analysis and task."
             }
           ]
         },
