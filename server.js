@@ -606,11 +606,23 @@ async function uploadPathToFilesAPI(filePath, mimeType, displayName) {
     text  = await resp.text();
     if (!resp.ok) throw new Error(`Undici upload failed (${resp.status}): ${text}`);
   } catch (e) {
-    // Fallback: form-data (force MIME so it never becomes text/plain)
+    console.warn(`⚠️ Undici upload failed (${e?.message}). Falling back to form-data.`);
+
     const form = new FormDataFallback();
     form.append('file', buf, { filename: name, contentType: type });
-    resp  = await fetch(url, { method: 'POST', body: form, headers: form.getHeaders?.() });
-    text  = await resp.text();
+
+    const formHeaders = form.getHeaders?.() || {};
+
+    resp = await fetch(url, {
+      method: 'POST',
+      body: form,
+      headers: {
+        'Content-Type': formHeaders['content-type'],
+        'Content-Length': buf.byteLength
+      },
+      signal: AbortSignal.timeout(600000)
+    });
+    text = await resp.text();
     if (!resp.ok) throw new Error(`Files API upload (fallback) failed (${resp.status}): ${text}`);
   }
 
@@ -1098,8 +1110,6 @@ app.post('/api/generate', queuedRouteWithSSE(async (req, res) => {
       model: `models/${MODEL}`
     });
 
-    
-
     req._queueProgress?.(30, 'model warmup and ingesting gold standard');
 
     await model.generateContent({
@@ -1109,51 +1119,49 @@ app.post('/api/generate', queuedRouteWithSSE(async (req, res) => {
           parts: buildGSIngestParts(useJson, useCsv, useKw)
         }
       ],
-      generationConfig: {
+      config: {
         temperature: 0.01,
-        maxOutputTokens: 10,
-        candidateCount: 1
+        maxOutputTokens: 10
       }
     });
 
-    const finalUserParts = [
-      { text: "\n\n---\nATTACHED VIDEO (analyze full visuals + audio)\n---\n" },
-      { fileData: { fileUri: cleanFileUri, mimeType: cleanMime } },
-      ...buildFinalInstructionParts({ videoSource, topic, titleHint, strategistPrompt, contextText })
+    const finalUserPrompt = buildFinalInstructionParts({
+      videoSource,
+      topic,
+      titleHint,
+      strategistPrompt,
+      contextText
+    }).map(part => part.text || '').join('\n\n');
+
+    const finalContentParts = [
+      {
+        role: 'user',
+        parts: [
+          {
+            text: [
+              "Follow output format exactly; store gold-standard patterns internally; do not leak chain-of-thought.",
+              finalUserPrompt
+            ].filter(Boolean).join('\n\n')
+          },
+          {
+            fileData: { fileUri: cleanFileUri, mimeType: cleanMime }
+          }
+        ]
+      }
     ];
 
-    const chat = model.startChat({
-      history: [
-        {
-          role: 'user',
-          parts: [
-            {
-              text: "Follow output format exactly; store gold-standard patterns internally; do not leak chain-of-thought. I have already loaded all gold-standard data for this session. Please proceed with the video analysis and task."
-            }
-          ]
-        },
-        {
-          role: 'model',
-          parts: [
-            {
-              text: "Understood. Proceeding."
-            }
-          ]
-        }
-      ],
-      generationConfig: {
+    req._queueProgress?.(55, 'analyzing video and generating');
+
+    const result = await model.generateContent({
+      contents: finalContentParts,
+      config: {
         temperature: 0,
         topP: 0.9,
         topK: 40,
         candidateCount: 1,
-        maxOutputTokens: 8192,
-        responseMimeType: "text/plain"
+        maxOutputTokens: 8192
       }
     });
-
-    req._queueProgress?.(55, 'analyzing video and generating');
-
-    const result = await chat.sendMessage(finalUserParts);
 
     let raw = "";
     try { raw = result?.response?.text?.() || ""; } catch (e) { console.error("result.response.text() failed:", e); }
