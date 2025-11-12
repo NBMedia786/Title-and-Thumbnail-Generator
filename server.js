@@ -1101,24 +1101,33 @@ app.post('/api/generate', queuedRouteWithSSE(async (req, res) => {
 
     
 
-      const historyMsgs = [
-    { role: 'user', parts: buildGSIngestParts(useJson, useCsv, useKw) },
-    {
-      role: 'user',
-      parts: [
-        { text: "\n\n---\nATTACHED VIDEO (analyze full visuals + audio)\n---\n" },
-        { fileData: { fileUri: cleanFileUri, mimeType: cleanMime } }
-      ]
-    }
-  ];
-
-  //new 
+    const historyMsgs = [
+      {
+        role: 'user',
+        parts: buildGSIngestParts(useJson, useCsv, useKw)
+      },
+      {
+        role: 'model',
+        parts: [
+          {
+            text: "Acknowledged. I have stored all Gold Standard patterns and keywords for reference."
+          }
+        ]
+      },
+      {
+        role: 'user',
+        parts: [
+          { text: "\n\n---\nATTACHED VIDEO (analyze full visuals + audio)\n---\n" },
+          { fileData: { fileUri: cleanFileUri, mimeType: cleanMime } },
+          ...buildFinalInstructionParts({ videoSource, topic, titleHint, strategistPrompt, contextText })
+        ]
+      }
+    ];
 
     console.log('GENERATION BODY (preview) ->', JSON.stringify({
-    model: MODEL,
-    history_first_role: historyMsgs[0]?.role,
-    history_second_role: historyMsgs[1]?.role,
-    fileData: { fileUri: cleanFileUri, mimeType: cleanMime }
+      model: MODEL,
+      history_roles: historyMsgs.map((m) => m.role),
+      fileData: { fileUri: cleanFileUri, mimeType: cleanMime }
     }, null, 2));
 
     const chat = model.startChat({
@@ -1133,14 +1142,10 @@ app.post('/api/generate', queuedRouteWithSSE(async (req, res) => {
       }
     });
 
-    req._queueProgress?.(30, 'model warmup');
-
-    await chat.sendMessage([{ text: "Acknowledge gold standard + attached video in one short sentence." }]);
-
+    req._queueProgress?.(30, 'model warmup and ingestion');
     req._queueProgress?.(55, 'analyzing video');
 
-    const parts = buildFinalInstructionParts({ videoSource, topic, titleHint, strategistPrompt, contextText });
-    const result = await chat.sendMessage(parts);
+    const result = await chat.sendMessage([{ text: "Proceed with analysis and generation." }]);
 
     let raw = "";
     try { raw = result?.response?.text?.() || ""; } catch (e) { console.error("result.response.text() failed:", e); }
