@@ -1095,7 +1095,7 @@ app.post('/api/generate', queuedRouteWithSSE(async (req, res) => {
     const useKw   = serverGS.kw   || clip(gsKeywordsText, 100000);
 
     const model = genAI.getGenerativeModel({
-      model: MODEL,
+      model: `models/${MODEL}`,
       systemInstruction: "Follow output format exactly; store gold-standard patterns internally; do not leak chain-of-thought."
     });
 
