@@ -592,7 +592,15 @@ async function waitForFileActive(
 async function uploadPathToFilesAPI(filePath, mimeType, displayName) {
   const url  = `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${API_KEY}`;
   const name = displayName || path.basename(filePath);
-  const type = mimeType || 'application/octet-stream';
+
+  let type = String(mimeType || 'application/octet-stream').toLowerCase().split(';')[0].trim();
+  if (type.includes('mp4') || name.toLowerCase().endsWith('.mp4')) {
+    type = 'video/mp4';
+  } else if (type.includes('webm') || name.toLowerCase().endsWith('.webm')) {
+    type = 'video/webm';
+  } else if (type.includes('mov') || name.toLowerCase().endsWith('.mov')) {
+    type = 'video/mp4';
+  }
   const buf  = await fs.promises.readFile(filePath);
 
   let resp, text;
