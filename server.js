@@ -1132,7 +1132,16 @@ app.post('/api/generate', queuedRouteWithSSE(async (req, res) => {
       }
     ];
 
+    const fileArg = finalContentParts[0]?.parts?.find(p => p.fileData)?.fileData;
+    console.log(`DEBUG: Final File Arg Sent: URI=${fileArg?.fileUri} | MIME=${fileArg?.mimeType}`);
+
     req._queueProgress?.(55, 'analyzing video and generating');
+
+    console.log('🧪 Final generateContent payload:', {
+      fileUri: finalContentParts[0]?.parts?.[1]?.fileData?.fileUri,
+      mimeType: finalContentParts[0]?.parts?.[1]?.fileData?.mimeType,
+      textPreview: (finalContentParts[0]?.parts?.[0]?.text || '').slice(0, 160)
+    });
 
     const result = await model.generateContent({
       contents: finalContentParts,
