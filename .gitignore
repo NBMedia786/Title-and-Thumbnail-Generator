@@ -1,0 +1,14 @@
+﻿node_modules/
+dist/
+bin/
+*.tmp
+*.part
+*.log
+*.mp4
+*.webm
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+# Ignore yt-dlp authentication file
+assets/deployment_cookies.txt
