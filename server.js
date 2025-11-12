@@ -729,7 +729,6 @@ const BIN_DIR    = path.join(__dirname, 'bin');
 const YTDLP_EXE  = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
 const YTDLP_PATH = path.join(BIN_DIR, YTDLP_EXE);
 // Optional cookie file (used only if present)
-const COOKIE_FILE_PATH = path.join(__dirname, 'assets', 'deployment_cookies.txt');
 
 async function ensureYtDlp() {
   try { await fs.promises.access(YTDLP_PATH, fs.constants.XOK || fs.constants.X_OK); return YTDLP_PATH; } catch {}
@@ -759,9 +758,11 @@ async function downloadWithYtDlpToPath(url) {
     url
   ];
 
-  // add cookies only if file exists
-  try { await fs.promises.access(COOKIE_FILE_PATH, fs.constants.R_OK); args.splice(7, 0, '--cookies', COOKIE_FILE_PATH); }
-  catch { /* cookie file absent; proceed without */ }
+  const COOKIES_PATH = "/root/cookies.txt";
+  if (fs.existsSync(COOKIES_PATH)) {
+    console.log('Using cookies.txt for YouTube download at path:', COOKIES_PATH);
+    args.splice(7, 0, '--cookies', COOKIES_PATH);
+  }
 
   console.log('▶️  yt-dlp', args.join(' '));
   await new Promise((resolve, reject) => {
