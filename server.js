@@ -1119,7 +1119,7 @@ app.post('/api/generate', queuedRouteWithSSE(async (req, res) => {
           parts: buildGSIngestParts(useJson, useCsv, useKw)
         }
       ],
-      config: {
+      generationConfig: {
         temperature: 0.01,
         maxOutputTokens: 10
       }
