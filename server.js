@@ -1102,46 +1102,18 @@ app.post('/api/generate', queuedRouteWithSSE(async (req, res) => {
     if (!fileUri)           return res.status(400).json({ ok: false, error: 'fileUri missing' });
     if (!strategistPrompt) return res.status(400).json({ ok: false, error: 'strategistPrompt missing' });
 
-    const useJson = serverGS.json || clip(gsJson, 150000);
-    const useCsv  = serverGS.csv  || clip(gsCsv, 100000);
-    const useKw   = serverGS.kw   || clip(gsKeywordsText, 100000);
-
     const model = genAI.getGenerativeModel({
       model: `models/${MODEL}`
     });
 
-    req._queueProgress?.(30, 'model warmup and ingesting gold standard');
-
-    await model.generateContent({
-      contents: [
-        {
-          role: 'user',
-          parts: buildGSIngestParts(useJson, useCsv, useKw)
-        }
-      ],
-      generationConfig: {
-        temperature: 0.01,
-        maxOutputTokens: 10
-      }
-    });
-
-    const finalUserPrompt = buildFinalInstructionParts({
-      videoSource,
-      topic,
-      titleHint,
-      strategistPrompt,
-      contextText
-    }).map(part => part.text || '').join('\n\n');
+    req._queueProgress?.(30, 'Preparing video analysis parts');
 
     const finalContentParts = [
       {
         role: 'user',
         parts: [
           {
-            text: [
-              "Follow output format exactly; store gold-standard patterns internally; do not leak chain-of-thought.",
-              finalUserPrompt
-            ].filter(Boolean).join('\n\n')
+            text: "Analyze the attached video file. Provide a 3-sentence summary and 3 unique title ideas. DO NOT reference any Gold Standard files."
           },
           {
             fileData: { fileUri: cleanFileUri, mimeType: cleanMime }
@@ -1155,10 +1127,9 @@ app.post('/api/generate', queuedRouteWithSSE(async (req, res) => {
     const result = await model.generateContent({
       contents: finalContentParts,
       generationConfig: {
-        temperature: 0,
+        temperature: 0.1,
         topP: 0.9,
         topK: 40,
-        candidateCount: 1,
         maxOutputTokens: 8192
       }
     });
