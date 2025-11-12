@@ -1154,7 +1154,7 @@ app.post('/api/generate', queuedRouteWithSSE(async (req, res) => {
 
     const result = await model.generateContent({
       contents: finalContentParts,
-      config: {
+      generationConfig: {
         temperature: 0,
         topP: 0.9,
         topK: 40,
