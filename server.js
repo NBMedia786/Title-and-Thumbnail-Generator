@@ -93,7 +93,7 @@ const upload = multer({
 const API_KEY = process.env.GOOGLE_API_KEY;
 // const MODEL   = process.env.MODEL || 'gemini-2.5-pro';
 //new
-const MODEL            = (process.env.MODEL || 'gemini-2.5-pro').replace(/\r|\n/g, '').trim();
+const MODEL            = (process.env.MODEL || 'gemini-2.5-flash').replace(/\r|\n/g, '').trim();
 const PORT             = process.env.PORT || 3002;
 const CLIENT_API_BASE  = process.env.CLIENT_API_BASE || '';
 
