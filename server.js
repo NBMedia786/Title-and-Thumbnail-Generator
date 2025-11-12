@@ -93,7 +93,7 @@ const upload = multer({
 const API_KEY = process.env.GOOGLE_API_KEY;
 // const MODEL   = process.env.MODEL || 'gemini-2.5-pro';
 //new
-const MODEL            = (process.env.MODEL || 'gemini-2.5-flash').replace(/\r|\n/g, '').trim();
+const MODEL            = (process.env.MODEL || 'gemini-2.5-pro').replace(/\r|\n/g, '').trim();
 const PORT             = process.env.PORT || 3002;
 const CLIENT_API_BASE  = process.env.CLIENT_API_BASE || '';
 
@@ -1089,14 +1089,15 @@ app.post('/api/generate', queuedRouteWithSSE(async (req, res) => {
     //new
         // ——— Normalize inputs (protect against CR/LF and stray params on VPS) ———
     let cleanFileUri = String(fileUri || '').replace(/\r|\n/g, '').trim();
-    if (cleanFileUri.startsWith('files/')) {
-      cleanFileUri = `https://generativelanguage.googleapis.com/v1beta/${cleanFileUri}`;
-    }
     const cleanMime    = String(fileMime || 'video/mp4').split(';')[0].trim();
 
-    // sanity guard: only proceed with a valid Files API URI
-    if (!/^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/files\//.test(cleanFileUri)) {
-      return res.status(400).json({ ok: false, error: 'fileUri is not a valid Files API URI' });
+    const prefix = 'https://generativelanguage.googleapis.com/v1beta/';
+    if (cleanFileUri.startsWith(prefix)) {
+      cleanFileUri = cleanFileUri.substring(prefix.length);
+    }
+
+    if (!cleanFileUri.startsWith('files/')) {
+      return res.status(400).json({ ok: false, error: 'fileUri is not a valid Files API URI name' });
     }
 
     console.log('▶️  /api/generate', {
@@ -1114,36 +1115,51 @@ app.post('/api/generate', queuedRouteWithSSE(async (req, res) => {
     if (!strategistPrompt) return res.status(400).json({ ok: false, error: 'strategistPrompt missing' });
 
     const model = genAI.getGenerativeModel({
-      model: `models/${MODEL}`
+      model: MODEL
     });
 
     req._queueProgress?.(30, 'Preparing video analysis parts');
 
-    const finalMimeType = 'video/mp4';
+    const useGsJson = gsJson || serverGS.json;
+    const useGsCsv = gsCsv || serverGS.csv;
+    const useGsKeywords = gsKeywordsText || serverGS.kw;
+
+    const gsIngestParts = buildGSIngestParts(useGsJson, useGsCsv, useGsKeywords);
+
+    const instructionParts = buildFinalInstructionParts({
+      videoSource,
+      topic,
+      titleHint,
+      strategistPrompt,
+      contextText
+    });
+
+    const videoPart = {
+      fileData: {
+        fileUri: cleanFileUri,
+        mimeType: cleanMime
+      }
+    };
 
     const finalContentParts = [
       {
         role: 'user',
         parts: [
-          {
-            text: "Analyze the attached video file. Provide a 3-sentence summary and 3 unique title ideas. DO NOT reference any Gold Standard files."
-          },
-          {
-            fileData: { fileUri: cleanFileUri, mimeType: finalMimeType }
-          }
+          ...gsIngestParts,
+          ...instructionParts,
+          videoPart
         ]
       }
     ];
 
-    const fileArg = finalContentParts[0]?.parts?.find(p => p.fileData)?.fileData;
-    console.log(`DEBUG: Final File Arg Sent: URI=${fileArg?.fileUri} | MIME=${fileArg?.mimeType}`);
+    console.log(`DEBUG: Final File Arg Sent: URI=${videoPart.fileData.fileUri} | MIME=${videoPart.fileData.mimeType}`);
 
     req._queueProgress?.(55, 'analyzing video and generating');
 
     console.log('🧪 Final generateContent payload:', {
-      fileUri: finalContentParts[0]?.parts?.[1]?.fileData?.fileUri,
-      mimeType: finalContentParts[0]?.parts?.[1]?.fileData?.mimeType,
-      textPreview: (finalContentParts[0]?.parts?.[0]?.text || '').slice(0, 160)
+      fileUri: videoPart.fileData.fileUri,
+      mimeType: videoPart.fileData.mimeType,
+      textPreview: (instructionParts[0]?.text || '').slice(0, 160)
     });
 
     const result = await model.generateContent({
