@@ -1116,6 +1116,8 @@ app.post('/api/generate', queuedRouteWithSSE(async (req, res) => {
 
     req._queueProgress?.(30, 'Preparing video analysis parts');
 
+    const finalMimeType = 'video/mp4';
+
     const finalContentParts = [
       {
         role: 'user',
@@ -1124,7 +1126,7 @@ app.post('/api/generate', queuedRouteWithSSE(async (req, res) => {
             text: "Analyze the attached video file. Provide a 3-sentence summary and 3 unique title ideas. DO NOT reference any Gold Standard files."
           },
           {
-            fileData: { fileUri: cleanFileUri, mimeType: cleanMime }
+            fileData: { fileUri: cleanFileUri, mimeType: finalMimeType }
           }
         ]
       }
