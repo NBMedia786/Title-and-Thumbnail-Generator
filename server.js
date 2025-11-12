@@ -1088,7 +1088,10 @@ app.post('/api/generate', queuedRouteWithSSE(async (req, res) => {
     } = req.body || {};
     //new
         // ——— Normalize inputs (protect against CR/LF and stray params on VPS) ———
-    const cleanFileUri = String(fileUri || '').replace(/\r|\n/g, '').trim();
+    let cleanFileUri = String(fileUri || '').replace(/\r|\n/g, '').trim();
+    if (cleanFileUri.startsWith('files/')) {
+      cleanFileUri = `https://generativelanguage.googleapis.com/v1beta/${cleanFileUri}`;
+    }
     const cleanMime    = String(fileMime || 'video/mp4').split(';')[0].trim();
 
     // sanity guard: only proceed with a valid Files API URI
