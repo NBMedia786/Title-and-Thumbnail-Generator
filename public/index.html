@@ -402,24 +402,34 @@
   const LS_GS_CSV ="tt_gen_gs_top10_csv";
   const LS_GS_DOCX="tt_gen_gs_keywords_docx_b64";
 
-  const hardDefaults={ 
-      prompt:`
-            You are a world-class YouTube strategist with an expert understanding of viral content mechanics.
-            
-            Your Reference Material:
-            You have ALREADY analyzed my Gold Standard files (keywords, titles, and dataset) in the PREVIOUS turn. Your first and most critical task is complete.
-
-            Your Primary Goal:
-            Now, analyze the new video content I have provided. Your goal is to apply the winning patterns you just learned from the gold standard examples to create 10 unique, viral-ready "Title & Thumbnail Packages" for my video.
-            
-            Instructions:
-
-            Video Summary & Core Angles: Begin with a brief summary of my video. Then, identify the 3-5 most powerful emotional hooks or narrative angles within it that align with the successful patterns you observed in the reference material.
-            Generate 10 Title & Thumbnail Packages: For each of the 10 packages, provide the following:
-            A Compelling Title: The title must be crafted in the style of the proven examples.
-            A Detailed Thumbnail Concept with accurate timestamps: Describe the perfect thumbnail. Be specific about the visuals, the focus, the emotion it should convey, the color scheme, and any text overlays. This concept should be a powerful visual echo of the successful thumbnails you analyzed.
-            Strategic Justification: This is the most important part. Briefly explain why this specific title and thumbnail combination is effective, directly referencing the patterns and psychological triggers you identified from the gold standard examples provided. Explain how your suggestion creates a powerful "curiosity gap" that will maximize clicks.` 
-    };
+const hardDefaults = {
+    prompt: `
+            You are an expert YouTube strategist. Your task is to analyze a new video based *only* on the Gold Standard (GS) files provided in the previous turn.
+            Your Goal:
+            Analyze the provided video and create 10 "Title & Thumbnail Packages" that strictly follow the patterns, language, and triggers from the GS files (\`DATASET1.JSON\`, \`top100_titles.csv\`, \`VIRAL CRIME-NICHE MASTER KEYWORD.txt\`).
+            ### MANDATORY RULES
+            1.  **GS Data Only:** All suggestions *must* be derived from the GS files. Do not invent new styles or use generic language.
+            2.  **Analyze First:** You *must* complete "Step 1" before "Step 2".
+            3.  **Justify All:** Every package *must* include a detailed "Strategic Justification" that explicitly names the GS patterns and keywords being used.
+            ### INSTRUCTIONS
+            **Step 1: Video Summary & Core Angles**
+            (You must complete this step first.)
+            * **A. Summary:** A 2-3 sentence summary of the video's main narrative.
+            * **B. Core Angles (3-5):** List the video's most powerful hooks. For each hook, you *must* state which 'Core Angle Identification' from \`DATASET1.JSON\` it matches (e.g., 'Shocking Twist/Revelation 😮', 'Human Element/Empathy 😢').
+            **Step 2: Generate 10 Title & Thumbnail Packages**
+            (Provide all three parts for each package.)
+            * **A. Title:**
+                * Must follow the exact style of the titles in \`top100_titles.csv\`.
+                * Must use specific keywords (Persona, Action, Object) from \`VIRAL CRIME-NICHE MASTER KEYWORD.txt\`.
+            * **B. Thumbnail Concept (with Timestamps):**
+                * Describe the visuals: focal point, emotion, color scheme, and any text.
+                * Must follow the \`thumbnail_deconstruction\` strategies from \`DATASET1.JSON\`.
+                * Must include *specific, accurate timestamps* from the video (e.g., \`[02:17]\`) for the best visual frame.
+            * **C. Strategic Justification:**
+                * **Title:** Name the \`psychological_triggers\` (e.g., 'Curiosity Gap') and the \`Keywords\` used (e.g., \`PERSONA: 'Mom'\`)
+                * **Thumbnail:** Explain the \`focal_point_and_emotion\` and \`visual_strategy\`
+                * **Synergy:** Explain how the title and thumbnail work together to create a curiosity gap, referencing the \`synergy_analysis\` logic from \`DATASET1.JSON\`.`
+  };
 
   const loadSettings=()=>{ try{const s=localStorage.getItem(LS_KEY); return s?JSON.parse(s):null}catch{return null} };
   const saveSettings=(v)=>{ try{localStorage.setItem(LS_KEY, JSON.stringify(v));}catch{} };
