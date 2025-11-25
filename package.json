@@ -1,0 +1,22 @@
+{
+  "name": "tt-generator",
+  "version": "2.0.0",
+  "description": "Title + Thumbnail Idea Generator (Gemini 2.5 Pro, Files API, queue, history)",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@google/genai": "^1.30.0",
+    "@google/generative-ai": "^0.24.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
+    "form-data": "^4.0.4",
+    "mammoth": "^1.11.0",
+    "multer": "^2.0.2",
+    "undici": "^7.16.0",
+    "ytdl-core": "^4.11.5"
+  }
+}
