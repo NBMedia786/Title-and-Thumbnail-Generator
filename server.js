@@ -339,7 +339,7 @@ function buildVideoParts({ videoSource, fileUri, fileMime, displayName }) {
   return parts;
 }
 
-function buildFinalInstruction({ strategistPrompt, videoSource, topic, titleHint, contextText, packageCount = 10, packageNum = 1 }) {
+function buildFinalInstruction({ strategistPrompt, videoSource, topic, titleHint, angleHint, contextText, packageCount = 10, packageNum = 1 }) {
   const base =
     strategistPrompt ||
     'You are a YouTube title & thumbnail strategist for long-form true-crime videos. ' +
@@ -350,7 +350,8 @@ function buildFinalInstruction({ strategistPrompt, videoSource, topic, titleHint
     '\n\n=== VIDEO CONTEXT ===\n' +
     'VIDEO SOURCE: ' + (videoSource || 'uploaded file / unknown') + '\n' +
     'TOPIC (optional): ' + (topic || '(none)') + '\n' +
-    'TITLE/ANGLE HINT (optional): ' + (titleHint || '(none)') + '\n' +
+    'TITLE/WORKING TITLE HINT (optional): ' + (titleHint || '(none)') + '\n' +
+    'ANGLE/PERSONA HINT (optional): ' + (angleHint || '(none)') + '\n' +
     'ADDITIONAL CONTEXT (optional): ' + (contextText || '(none)');
 
   const goldStandardRequirements =
@@ -911,6 +912,7 @@ app.post('/api/generate', async (req, res) => {
     displayName,
     topic,
     titleHint,
+    angleHint,
     contextText,
     strategistPrompt,
     playback
@@ -974,6 +976,7 @@ app.post('/api/generate', async (req, res) => {
       videoSource: videoSource || fileUri || '',
       topic,
       titleHint,
+      angleHint,
       contextText
     });
 
@@ -1079,6 +1082,7 @@ app.post('/api/regenerate-card', async (req, res) => {
     displayName,
     topic,
     titleHint,
+    angleHint,
     contextText,
     strategistPrompt,
     packageNum // Extract packageNum
@@ -1142,6 +1146,7 @@ app.post('/api/regenerate-card', async (req, res) => {
       videoSource: videoSource || fileUri || '',
       topic,
       titleHint,
+      angleHint,
       contextText,
       packageCount: 1,  // KEY DIFFERENCE: request only 1 package
       packageNum: packageNum || 1 // Pass packageNum to instruction builder

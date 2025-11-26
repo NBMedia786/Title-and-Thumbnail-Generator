@@ -785,6 +785,18 @@
           <div id="videoPreviewContainer"><video id="videoPreview" controls></video></div>
         </div>
 
+        <!-- Optional Hints Section -->
+        <div class="row" style="margin-top:20px">
+          <div class="form-group">
+            <label>Title / Working Title (Optional)</label>
+            <input id="titleHint" type="text" placeholder="e.g., Family Secrets Revealed" autocomplete="off" />
+          </div>
+          <div class="form-group">
+            <label>Angle / Persona Hint (Optional)</label>
+            <input id="angleHint" type="text" placeholder="e.g., Focus on detective's perspective" autocomplete="off" />
+          </div>
+        </div>
+
         <div class="btnbar">
           <button class="primary" id="runBtn">Generate 10 Packages</button>
           <span id="queueBadge" class="pill" style="display:none">In queue…</span>
@@ -942,6 +954,7 @@
       runBtn: $("runBtn"), copyBtn: $("copyBtn"),
       status: $("status"), bar: $("bar"), output: $("output"),
       ytUrl: $("ytUrl"),
+      titleHint: $("titleHint"), angleHint: $("angleHint"),
       urlBtn: $("urlBtn"), localBtn: $("localBtn"),
       urlInputContainer: $("urlInputContainer"), localInputContainer: $("localInputContainer"),
       videoFile: $("videoFile"), videoPreview: $("videoPreview"), videoPreviewContainer: $("videoPreviewContainer"),
@@ -2164,7 +2177,8 @@
           fileUri, fileMime, videoSource,
           strategistPrompt,
           topic: "",
-          titleHint: "",
+          titleHint: els.titleHint.value.trim(),
+          angleHint: els.angleHint.value.trim(),
           contextText: "",
           playback, displayName
         };
