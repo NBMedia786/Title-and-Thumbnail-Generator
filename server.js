@@ -91,6 +91,7 @@ async function waitForFileActive(fileName, {
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ limit: '25mb', extended: true }));
 
 // Static: /public for index.html + history.js (same UI as before)
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -102,14 +103,49 @@ app.get('/', (_req, res) => {
 // --- Multer for local uploads (no yt-dlp, no ytdl-core) ---
 const MAX_FILE_SIZE = Number(process.env.MULTER_MAX_FILE_SIZE || 2_147_483_648); // 2GB
 const UPLOADS_DIR = path.join(__dirname, 'public/uploads');
-fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+// Ensure uploads directory exists with proper permissions
+try {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  // Test write permissions
+  const testFile = path.join(UPLOADS_DIR, '.write-test');
+  fs.writeFileSync(testFile, 'test');
+  fs.unlinkSync(testFile);
+  console.log('[UPLOADS] Directory ready:', UPLOADS_DIR);
+} catch (err) {
+  console.error('[UPLOADS] ERROR: Cannot write to uploads directory:', err.message);
+  console.error('[UPLOADS] Path:', UPLOADS_DIR);
+  console.error('[UPLOADS] This will cause upload failures on production servers!');
+}
 
 const upload = multer({
   storage: multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
-    filename: (_req, file, cb) => cb(null, `upload_${Date.now()}_${file.originalname.replace(/[^a-zA-Z0-9.]/g, '_')}`)
+    destination: (_req, _file, cb) => {
+      // Verify directory exists on each upload
+      fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+      cb(null, UPLOADS_DIR);
+    },
+    filename: (_req, file, cb) => {
+      const safeName = file.originalname.replace(/[^a-zA-Z0-9.]/g, '_');
+      const filename = `upload_${Date.now()}_${safeName}`;
+      console.log('[UPLOADS] Saving file:', filename);
+      cb(null, filename);
+    }
   }),
-  limits: { fileSize: MAX_FILE_SIZE }
+  limits: {
+    fileSize: MAX_FILE_SIZE,
+    files: 1
+  },
+  fileFilter: (_req, file, cb) => {
+    console.log('[UPLOADS] Receiving file:', file.originalname, 'mime:', file.mimetype);
+    // Accept video files
+    if (file.mimetype.startsWith('video/')) {
+      cb(null, true);
+    } else {
+      console.warn('[UPLOADS] Rejected non-video file:', file.mimetype);
+      cb(new Error(`Invalid file type: ${file.mimetype}. Only video files are allowed.`));
+    }
+  }
 });
 
 // --- Helpers ---
@@ -185,6 +221,44 @@ app.get("/api/gs-status", (_req, res) => {
       all: json && csv && doc,
     },
   });
+});
+
+// === HEALTH CHECK ENDPOINT ===
+app.get("/api/health", (_req, res) => {
+  const uploadsWritable = (() => {
+    try {
+      const testFile = path.join(UPLOADS_DIR, '.health-check');
+      fs.writeFileSync(testFile, 'test');
+      fs.unlinkSync(testFile);
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+
+  const health = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+    goldStandards: {
+      json: !!GOLD_STANDARDS.jsonText,
+      csv: !!GOLD_STANDARDS.csvText,
+      keywords: !!GOLD_STANDARDS.kwText
+    },
+    uploads: {
+      directory: UPLOADS_DIR,
+      writable: uploadsWritable,
+      maxFileSize: MAX_FILE_SIZE
+    },
+    config: {
+      port: PORT,
+      model: MODEL_NAME,
+      nodeVersion: process.version
+    }
+  };
+
+  res.json(health);
 });
 
 function buildGSIngestParts() {
@@ -802,6 +876,7 @@ app.post('/api/upload-video', upload.single('video'), async (req, res) => {
   const ticketId = typeof req.query.qid === 'string' ? req.query.qid : null;
 
   if (!req.file) {
+    console.error('[UPLOAD] No file in request');
     return res.status(400).json({ error: 'No file uploaded' });
   }
 
@@ -809,19 +884,29 @@ app.post('/api/upload-video', upload.single('video'), async (req, res) => {
   const filename = req.file.filename;
   const displayName = req.file.originalname;
   const mimeType = req.file.mimetype || 'video/mp4';
+  const fileSize = req.file.size;
+
+  console.log('[UPLOAD] Processing:', displayName, `(${Math.round(fileSize / 1024 / 1024)}MB)`);
 
   const runUpload = async (update) => {
     update(10, 'Uploading video to Gemini Files API…');
 
     let uploadResult;
     try {
+      console.log('[Files API] Starting upload:', tmpPath);
       uploadResult = await fileManager.uploadFile(tmpPath, {
         mimeType,
         displayName
       });
+      console.log('[Files API] Upload successful:', uploadResult?.file?.name);
     } catch (err) {
       console.error('[Files API] upload failed:', err);
-      throw new Error('Gemini Files API upload failed');
+      console.error('[Files API] Error details:', {
+        message: err.message,
+        code: err.code,
+        status: err.status
+      });
+      throw new Error(`Gemini Files API upload failed: ${err.message}`);
     }
     // Note: We keep the local file in public/uploads for history playback
 
@@ -834,7 +919,9 @@ app.post('/api/upload-video', upload.single('video'), async (req, res) => {
 
     try {
       // ⏱️ Poll until the file state is ACTIVE
+      console.log('[Files API] Waiting for file to become ACTIVE:', file.name);
       file = await waitForFileActive(file.name);
+      console.log('[Files API] File is now ACTIVE:', file.name);
     } catch (err) {
       console.error('[Files API] waitForFileActive failed:', err);
       throw new Error('Uploaded video is not ready for use yet (file not ACTIVE)');
@@ -854,11 +941,29 @@ app.post('/api/upload-video', upload.single('video'), async (req, res) => {
     const result = ticketId
       ? await queue.run(ticketId, runUpload)
       : await runUpload(() => { });
+    console.log('[UPLOAD] Success:', displayName);
     res.json(result);
   } catch (err) {
-    console.error('upload-video error:', err);
+    console.error('[UPLOAD] Failed:', displayName, err.message);
     res.status(500).json({ error: err.message || 'Upload failed' });
   }
+});
+
+// Handle multer errors (file too large, wrong type, etc.)
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    console.error('[MULTER ERROR]:', err.code, err.message);
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({
+        error: `File too large. Maximum size is ${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB`
+      });
+    }
+    return res.status(400).json({ error: `Upload error: ${err.message}` });
+  } else if (err) {
+    console.error('[UPLOAD ERROR]:', err.message);
+    return res.status(500).json({ error: err.message || 'Upload failed' });
+  }
+  next();
 });
 
 // --- /api/fetch-youtube: no download, just validate URL & return it ---
@@ -1448,9 +1553,25 @@ app.post('/api/history/purge', async (req, res) => {
 (async () => {
   await loadGoldStandards();
   await fs.promises.mkdir(HIST_DIR, { recursive: true }).catch(() => { });
-  app.listen(PORT, HOST, () => {
+
+  const server = app.listen(PORT, HOST, () => {
     console.log(`TT Generator running at http://${HOST}:${PORT}`);
   });
+
+  // Apply timeout configurations from .env for large file uploads
+  const REQUEST_TIMEOUT = Number(process.env.SERVER_REQUEST_TIMEOUT_MS || 3600000); // 1 hour default
+  const HEADERS_TIMEOUT = Number(process.env.SERVER_HEADERS_TIMEOUT_MS || 1800000); // 30 min default
+  const KEEPALIVE_TIMEOUT = Number(process.env.SERVER_KEEPALIVE_TIMEOUT_MS || 65000); // 65s default
+
+  server.requestTimeout = REQUEST_TIMEOUT;
+  server.headersTimeout = HEADERS_TIMEOUT;
+  server.keepAliveTimeout = KEEPALIVE_TIMEOUT;
+
+  console.log('[SERVER] Timeout configuration:');
+  console.log(`  - Request timeout: ${REQUEST_TIMEOUT}ms (${Math.round(REQUEST_TIMEOUT / 60000)} minutes)`);
+  console.log(`  - Headers timeout: ${HEADERS_TIMEOUT}ms (${Math.round(HEADERS_TIMEOUT / 60000)} minutes)`);
+  console.log(`  - Keep-alive timeout: ${KEEPALIVE_TIMEOUT}ms (${Math.round(KEEPALIVE_TIMEOUT / 1000)} seconds)`);
+  console.log(`[SERVER] Max upload size: ${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB`);
 })();
 
 
