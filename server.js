@@ -19,11 +19,40 @@ import crypto from 'crypto';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { GoogleAIFileManager } from '@google/generative-ai/server';
 import { GoogleGenAI } from '@google/genai'; // New SDK for image generation
+
 import mammoth from 'mammoth';
+import ytDlpRaw from 'yt-dlp-exec';
+import ffmpeg from 'fluent-ffmpeg';
+
+// --- Wrapper for yt-dlp with permanent quiet defaults ---
+// This prevents terminal overflow by ensuring all calls suppress verbose output
+const ytDlp = (url, options = {}) => {
+  const defaultOptions = {
+    quiet: true,           // Suppress progress and other non-error output
+    noWarnings: true,      // Suppress warnings
+    noPart: true,          // Don't use .part files
+    noProgress: true       // Don't show progress bar
+  };
+
+  // Merge user options with defaults (user options take precedence)
+  const mergedOptions = { ...defaultOptions, ...options };
+
+  return ytDlpRaw(url, mergedOptions);
+};
 
 // --- ESM helpers ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// --- GLOBAL ERROR HANDLERS to prevent crash on unhandled 429s or others ---
+process.on('uncaughtException', (err) => {
+  console.error('[CRITICAL] Uncaught Ex:', err);
+  // Optional: fs.appendFileSync(...)
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[CRITICAL] Unhandled Rejection:', reason);
+});
+
 
 // --- Env & config ---
 const PORT = Number(process.env.PORT || 3002);
@@ -85,6 +114,27 @@ async function waitForFileActive(fileName, {
   }
 
   return file;
+}
+
+// --- Retry Helper ---
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function runWithRetry(fn, retries = 3, baseDelay = 2000) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const status = err.status || err.response?.status;
+      // Retry on 429 (Too Many Requests) or 503 (Service Unavailable)
+      if ((status === 429 || status === 503) && i < retries - 1) {
+        const delay = baseDelay * Math.pow(2, i);
+        console.warn(`[Retry] Attempt ${i + 1} failed with ${status}. Retrying in ${delay}ms...`);
+        await sleep(delay);
+        continue;
+      }
+      throw err;
+    }
+  }
 }
 
 // --- Express setup ---
@@ -375,15 +425,21 @@ function buildVideoParts({ videoSource, fileUri, fileMime, displayName }) {
     'Do NOT fabricate names, events, or details not present in the video.\n';
 
   // Case 1: YouTube URL → use as file_data file_uri (official pattern)
-  if (videoSource && isYouTubeUrl(videoSource)) {
+  // Clean potential "YouTube: " prefix from app.js
+  let cleanSource = videoSource;
+  if (videoSource && typeof videoSource === 'string') {
+    cleanSource = videoSource.replace(/^YouTube:\s*/i, '').trim();
+  }
+
+  if (cleanSource && isYouTubeUrl(cleanSource)) {
     parts.push({
       text:
-        `Here is the YouTube video to analyze:\n${videoSource}\n` +
+        `Here is the YouTube video to analyze:\n${cleanSource}\n` +
         analysisInstruction
     });
     parts.push({
       fileData: {
-        fileUri: videoSource
+        fileUri: cleanSource
       }
     });
     return parts;
@@ -417,8 +473,8 @@ function buildFinalInstruction({ strategistPrompt, videoSource, topic, titleHint
   const base =
     strategistPrompt ||
     'You are a YouTube title & thumbnail strategist for long-form true-crime videos. ' +
-    `Given the video and the GOLD STANDARD patterns you analyzed, generate ${packageCount} strong ` +
-    'Title + Thumbnail idea packages for this video.';
+    `Given the video and the GOLD STANDARD patterns you analyzed, generate ALL your best ` +
+    'Title + Thumbnail idea packages for this video (MAXIMUM 10).';
 
   const contextInfo =
     '\n\n=== VIDEO CONTEXT ===\n' +
@@ -458,11 +514,13 @@ function buildFinalInstruction({ strategistPrompt, videoSource, topic, titleHint
     (packageCount === 1
       ? '• Generate ONE (1) Title + Thumbnail package with strategy explanation.\n'
       : '• Start with a brief "Video Summary & Core Angles" section (2-3 sentences).\n' +
-      '• Then provide EXACTLY ' + packageCount + ' Title + Thumbnail packages.\n' +
+      '• Then provide YOUR BEST Title + Thumbnail packages (MAXIMUM ' + packageCount + ').\n' +
+      '• STOP generating if you run out of high-quality, gold-standard ideas. Do NOT fill space with mediocre ones.\n' +
       '• For each package, include:\n' +
       '  - Package number heading: <h2>Package X</h2>\n' +
       '  - Core Angle classification: <p><strong>Core Angle:</strong> [One of: Shocking Twist/Revelation 😱 | Human Element (Killer Psychology) 🧠 | Procedural Deep-Dive 🕵️‍♂️ | Injustice & Outrage 😠]</p>\n' +
       '  - Title (bold): <p><strong>Title:</strong> Your title here</p>\n' +
+      '  - Timestamps (crucial): <p><strong>Timestamps:</strong> [MM:SS], [MM:SS]</p> (Identify 1-2 exact moments in the video that match this thumbnail concept. If no exact match, estimate based on the event.)\n' +
       '  - Thumbnail description (detailed visual strategy): <p><strong>Thumbnail Description:</strong> ...</p>\n' +
       '  - Strategy explanation: <p><strong>Strategy:</strong> Explain which gold standard patterns and triggers you used</p>\n' +
       '  - Gold standard references: <p><strong>Gold Standard References:</strong> Cite 1-2 similar successful examples</p>\n' +
@@ -471,6 +529,7 @@ function buildFinalInstruction({ strategistPrompt, videoSource, topic, titleHint
 
   const qualityRules =
     '\n\n=== QUALITY RULES ===\n' +
+    '• QUALITY OVER QUANTITY: Provide 5-7 perfect packages rather than 10 mediocre ones. Only go up to 10 if every single one is a perfect match.\n' +
     '• Use ONLY information from the video + GOLD STANDARD patterns.\n' +
     '• Do NOT invent fake cases, people, or events.\n' +
     '• Do NOT use generic clickbait - follow the crime/psychology focus from gold standards.\n' +
@@ -485,6 +544,7 @@ function buildFinalInstruction({ strategistPrompt, videoSource, topic, titleHint
     '<h2>Package 1</h2>\n' +
     '<p><strong>Core Angle:</strong> Shocking Twist/Revelation 😱</p>\n' +
     '<p><strong>Title:</strong> Mom Realizes Police Discovered Her Horrifying Secret</p>\n' +
+    '<p><strong>Timestamps:</strong> [04:21], [12:45]</p>\n' +
     '<p><strong>Thumbnail Description:</strong> Close-up of a woman\'s face in intense distress/shock, captured in police custody. High-contrast lighting emphasizes her panicked expression. Muted color palette (grays, dark blues) creates somber mood. Police presence visible in blurred background. Emotion conveyed: Panic, despair, dawning horror of being caught.</p>\n' +
     '<p><strong>Strategy:</strong> This follows the "[Persona] Realizes [Authority] Discovered [Horrifying Secret]" pattern from gold standards. Applies three key psychological triggers: (1) <em>Curiosity Gap</em> - withholds what the secret is, (2) <em>Negativity Bias</em> - "horrifying" amplifies shock value, (3) <em>Violation of Norms</em> - maternal figure with dark secret creates cognitive dissonance. Uses 5 master keywords: Mom (persona), Realizes (action), Police (authority), Discovered (action), Horrifying (emotion), Secret (object). Title-thumbnail synergy: Title promises revelation → Thumbnail shows emotional impact of that revelation.</p>\n' +
     '<p><strong>Gold Standard References:</strong> Inspired by "Mom Realizes Police Discovered Her Horrifying Secret" (DATASET1.JSON case study) and "Dad Realizes Cops Discovered His Horrifying Secret" (top100_titles_thumbnails.csv). Both use identical pattern with 95%+ effectiveness in crime niche.</p>\n\n' +
@@ -492,6 +552,7 @@ function buildFinalInstruction({ strategistPrompt, videoSource, topic, titleHint
     '<h2>Package 2</h2>\n' +
     '<p><strong>Core Angle:</strong> Human Element (Killer Psychology) 🧠</p>\n' +
     '<p><strong>Title:</strong> When Teen Killer Realizes She\'s Been Caught</p>\n' +
+    '<p><strong>Timestamps:</strong> [08:15]</p>\n' +
     '<p><strong>Thumbnail Description:</strong> Close-up of teenage girl\'s face showing shock and despair in interrogation room. Dramatic lighting from above creates shadows emphasizing distress. Context cues: police presence, institutional setting. Emotion: Shock, fear, weight of consequences, the "moment of truth" captured.</p>\n' +
     '<p><strong>Strategy:</strong> Follows "When [Persona] [Realizes/Discovers] [Consequence]" pattern. Applies: (1) <em>Curiosity Gap</em> - what did she do?, (2) <em>Emotional Intensity</em> - focuses on pivotal realization moment, (3) <em>Specificity</em> - "Teen" adds shock factor of youth. Uses 4 keywords: When (curiosity trigger), Teen (persona), Killer (persona/object), Realizes (action), Caught (consequence). Synergy: Title promises dramatic moment → Thumbnail delivers visual proof of that emotional peak.</p>\n' +
     '<p><strong>Gold Standard References:</strong> Based on "When Teen Killers Realize They\'ve Been Caught" (DATASET1.JSON) and "When A Teen Killer Realizes She\'s Been Caught" (top100_titles_thumbnails.csv). Pattern proven effective for youthful offender content.</p>\n\n' +
@@ -532,6 +593,7 @@ class HistoryStore {
     this.dir = dir;
     this.indexPath = path.join(dir, 'index.json');
     this.limit = BigInt(limitBytes);
+    this._initialized = false;
   }
 
   async _ensureDir() {
@@ -549,13 +611,39 @@ class HistoryStore {
 
   async _readIndex() {
     await this._ensureDir();
+    let j = { items: [] };
     try {
       const raw = await fs.promises.readFile(this.indexPath, 'utf-8');
-      const j = JSON.parse(raw);
-      return j && Array.isArray(j.items) ? j : { items: [] };
+      j = JSON.parse(raw);
+      if (!j || !Array.isArray(j.items)) j = { items: [] };
     } catch {
-      return { items: [] };
+      j = { items: [] };
     }
+
+    // Auto-migration: If items lack 'videoSource' or 'meta_preview', try to populate them
+    if (!this._initialized) {
+      this._initialized = true;
+      let changed = false;
+      const items = j.items;
+      // Process in chunks to avoid blocking too long on startup
+      for (const it of items) {
+        if (!it.videoSource && it.file_path && fs.existsSync(it.file_path)) {
+          try {
+            // Peek at the file
+            const rawGz = await fs.promises.readFile(it.file_path);
+            const buf = zlib.gunzipSync(rawGz);
+            console.log(`[History] Migrated item ${it.id}`);
+          } catch (e) {
+            console.warn(`[History] Failed to migrate ${it.id}:`, e.message);
+          }
+        }
+      }
+      if (changed) {
+        await this._writeIndex(j);
+        console.log('[History] Index migration complete.');
+      }
+    }
+    return j;
   }
 
   async _writeIndex(idx) {
@@ -611,10 +699,12 @@ class HistoryStore {
       meta: {
         id,
         title: meta.title || meta.displayName || meta.videoSource || 'Untitled',
+        summary: meta.summary || null,
         created_at,
         size_bytes: Buffer.byteLength(html || '', 'utf-8'),
         videoSource: meta.videoSource || null,
-        playback: meta.playback || null
+        playback: meta.playback || null,
+        generationContext: meta.generationContext || null
       },
       ts: created_at
     };
@@ -626,9 +716,14 @@ class HistoryStore {
     idx.items.push({
       id,
       title: payload.meta.title,
+      summary: payload.meta.summary,
       created_at,
       size_bytes: payload.meta.size_bytes,
       file_path: gzPath,
+      videoSource: payload.meta.videoSource,
+      playback: payload.meta.playback,
+      angle: payload.meta.generationContext?.angleHint,
+      prompt: payload.meta.generationContext?.strategistPrompt,
       preview: String(html || '').slice(0, 240)
     });
 
@@ -639,6 +734,60 @@ class HistoryStore {
       meta: payload.meta,
       storage: { used: Number(used), limit: Number(limit) }
     };
+  }
+
+  async appendHtml(id, htmlToAppend) {
+    const idx = await this._readIndex();
+    const item = idx.items.find(i => i.id === id);
+    if (!item || !item.file_path) return false;
+
+    try {
+      const rawGz = await fs.promises.readFile(item.file_path);
+      const buf = zlib.gunzipSync(rawGz);
+      const data = JSON.parse(buf.toString('utf-8'));
+
+      data.html = (data.html || '') + htmlToAppend;
+      data.meta.size_bytes = Buffer.byteLength(data.html, 'utf-8');
+
+      const newBuf = Buffer.from(JSON.stringify(data), 'utf-8');
+      const newGz = zlib.gzipSync(newBuf);
+      await fs.promises.writeFile(item.file_path, newGz);
+
+      item.size_bytes = newGz.length;
+      await this._writeIndex(idx);
+
+      return true;
+    } catch (e) {
+      console.error("Append failed", e);
+      return false;
+    }
+  }
+
+  async updateHtml(id, newHtml) {
+    const idx = await this._readIndex();
+    const item = idx.items.find(i => i.id === id);
+    if (!item || !item.file_path) return false;
+
+    try {
+      const rawGz = await fs.promises.readFile(item.file_path);
+      const buf = zlib.gunzipSync(rawGz);
+      const data = JSON.parse(buf.toString('utf-8'));
+
+      data.html = newHtml;
+      data.meta.size_bytes = Buffer.byteLength(data.html, 'utf-8');
+
+      const newBuf = Buffer.from(JSON.stringify(data), 'utf-8');
+      const newGz = zlib.gzipSync(newBuf);
+      await fs.promises.writeFile(item.file_path, newGz);
+
+      item.size_bytes = newGz.length;
+      await this._writeIndex(idx);
+
+      return true;
+    } catch (e) {
+      console.error("Update failed", e);
+      return false;
+    }
   }
 
   async list({ q = '', limit = 100, page = 1 }) {
@@ -655,12 +804,17 @@ class HistoryStore {
     items.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
     const offset = (page - 1) * limit;
     const slice = items.slice(offset, offset + limit).map(
-      ({ id, title, created_at, size_bytes, preview }) => ({
-        id,
-        title,
-        created_at,
-        size_bytes,
-        preview
+      (it) => ({
+        id: it.id,
+        title: it.title,
+        summary: it.summary,
+        created_at: it.created_at,
+        size_bytes: it.size_bytes,
+        preview: it.preview,
+        videoSource: it.videoSource,
+        playback: it.playback,
+        angle: it.angle,
+        prompt: it.prompt
       })
     );
     return { items: slice, total: items.length, page, limit };
@@ -1005,6 +1159,305 @@ app.post('/api/fetch-youtube', async (req, res) => {
   }
 });
 
+// --- /api/proxy-youtube-frame: Capture static frame from YouTube ---
+app.get('/api/proxy-youtube-frame', async (req, res) => {
+  const url = req.query.url;
+  const time = parseFloat(req.query.time) || 0;
+
+  if (!url) return res.status(400).send('Invalid YouTube URL');
+
+  try {
+    console.log(`[Proxy] Fetching info for ${url} at ${time}s via yt-dlp pipe...`);
+
+    // Use yt-dlp to download a small segment (5s) around the timestamp
+    // This is much more reliable than ffmpeg seeking on remote URLs
+    // Format: *start-end
+    const section = `*${time}-${time + 5}`;
+
+    const ytProcess = ytDlp.exec(url, {
+      output: '-',
+      downloadSections: section,
+      format: 'bestvideo[height<=720]+bestaudio/best[height<=720]', // Limit quality for speed
+      quiet: true,
+      noWarnings: true,
+    }, {
+      stdio: ['ignore', 'pipe', 'ignore'] // We only want stdout
+    });
+
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=31536000');
+
+    // Hard timeout for the process to prevent hanging
+    const timeout = setTimeout(() => {
+      if (!ytProcess.killed) {
+        console.error('[Proxy] yt-dlp timeout');
+        ytProcess.kill();
+        if (!res.headersSent) res.status(504).send('Gateway Timeout');
+      }
+    }, 15000); // 15s timeout
+
+    // Handle yt-dlp stderr manually to catch early failures
+    if (ytProcess.stderr) {
+      ytProcess.stderr.on('data', (d) => process.stdout.write(`[yt-dlp err] ${d}`));
+    }
+
+    // Pipe yt-dlp -> ffmpeg -> response
+    if (!ytProcess.stdout) {
+      clearTimeout(timeout);
+      throw new Error('yt-dlp stdout not available');
+    }
+
+    const ff = ffmpeg(ytProcess.stdout)
+      .frames(1)
+      .format('image2')
+      .on('error', (err) => {
+        // Suppress expected "pipe:0: End of file" errors when we kill the pipe
+        if (err.message.includes('pipe:0')) return;
+        console.error('[Proxy] FFmpeg error:', err.message);
+        ytProcess.kill();
+        if (!res.headersSent) res.status(500).end();
+      })
+      .on('end', () => clearTimeout(timeout))
+      .pipe(res, { end: true });
+
+  } catch (err) {
+    console.error('[Proxy] Error:', err.message);
+    if (!res.headersSent) res.status(500).send('Generation failed');
+  }
+});
+
+// --- /api/search-competitors: Search YouTube via yt-dlp ---
+// --- /api/search-competitors: Search YouTube via yt-dlp ---
+app.get('/api/search-competitors', async (req, res) => {
+  let query = req.query.query;
+  const limit = parseInt(req.query.limit) || 10;
+  const type = req.query.type || 'video'; // 'video' or 'channel'
+
+  if (!query) return res.status(400).send('Missing query');
+
+  console.log(`[Search] Searching for: "${query}" (limit ${limit}, type ${type})`);
+
+  try {
+    let command = '';
+
+    // Channel Mode Logic
+    if (type === 'channel' || query.trim().startsWith('@')) {
+      // Assume input is handle/url. 
+      // yt-dlp works best with full URL for channels.
+      if (!query.startsWith('http')) {
+        // If it's just "@handle", make it "https://www.youtube.com/@handle/videos"
+        if (!query.trim().startsWith('@')) query = '@' + query;
+        query = `https://www.youtube.com/${query}/videos`;
+      } else {
+        if (!query.endsWith('/videos') && !query.includes('/watch')) {
+          // Append /videos to ensure we get upload feed, not home
+          query = query.replace(/\/$/, '') + '/videos';
+        }
+      }
+
+      // Fetch playlist
+      command = query; // Just passing the URL triggers playlist behavior
+
+    } else {
+      // Standard Search
+      command = `ytsearch${limit}:${query}`;
+    }
+
+    // Run yt-dlp
+    const results = await ytDlp(command, {
+      dumpSingleJson: true,
+      flatPlaylist: true, // Always use flat to prevent terminal overflow
+      playlistEnd: limit
+    });
+
+    const videos = results.entries || [];
+
+    // Channel Metadata attempt (results.uploader, results.channel_url etc might be in root)
+    const channelMeta = {
+      avatar: null,
+      name: results.uploader || results.channel || results.title,
+      url: results.webpage_url || results.uploader_url
+    };
+
+    // Map to cleaner format with better fallbacks for flat playlist
+    const cleanVideos = videos.map(v => {
+      // For thumbnails, try multiple sources
+      let thumbnail = null;
+      if (v.id) {
+        thumbnail = `https://i.ytimg.com/vi/${v.id}/maxresdefault.jpg`;
+      } else if (v.thumbnail) {
+        thumbnail = v.thumbnail;
+      } else if (v.thumbnails && v.thumbnails.length > 0) {
+        thumbnail = v.thumbnails[v.thumbnails.length - 1]?.url;
+      }
+
+      return {
+        id: v.id,
+        title: v.title,
+        channel: v.channel || v.uploader || v.channel_name || channelMeta.name,
+        views: v.view_count || v.views || null,
+        date: v.upload_date || v.release_date || v.timestamp || null,
+        duration: v.duration || null,
+        thumbnail: thumbnail,
+        url: v.url || v.webpage_url || `https://www.youtube.com/watch?v=${v.id}`,
+        channelAvatar: channelMeta.avatar
+      };
+    });
+
+    res.json({ videos: cleanVideos, meta: channelMeta });
+
+  } catch (err) {
+    console.error('[Search] Error:', err.message);
+    res.status(500).json({ error: 'Search failed' });
+  }
+});
+
+
+// --- /api/enrich-metadata: Batch fetch dates for video IDs ---
+app.post('/api/enrich-metadata', async (req, res) => {
+  const { videoIds } = req.body;
+  if (!videoIds || !Array.isArray(videoIds) || videoIds.length === 0) {
+    return res.status(400).json({ error: 'Missing or invalid videoIds array' });
+  }
+
+  console.log(`[Enrich] Fetching metadata for ${videoIds.length} videos`);
+
+  try {
+    const enrichedData = [];
+
+    // Fetch each video individually with full metadata
+    for (const id of videoIds) {
+      try {
+        const videoUrl = `https://www.youtube.com/watch?v=${id}`;
+        const result = await ytDlp(videoUrl, {
+          dumpSingleJson: true,
+          skipDownload: true,
+          ignoreErrors: true  // Continue even if video is members-only
+        });
+
+        enrichedData.push({
+          id: id,
+          date: result.upload_date || result.release_date || null,
+          views: result.view_count || result.views || null,
+          duration: result.duration || null
+        });
+      } catch (err) {
+        console.warn(`[Enrich] Failed to fetch ${id}:`, err.message);
+        // Continue with other videos even if one fails
+        enrichedData.push({ id: id, date: null, views: null, duration: null });
+      }
+    }
+
+    res.json({ enriched: enrichedData });
+  } catch (err) {
+    console.error('[Enrich] Error:', err);
+    res.status(500).json({ error: 'Enrichment failed' });
+  }
+});
+
+// --- /api/discover-competitors: AI Brainstorming ---
+app.post('/api/discover-competitors', async (req, res) => {
+  // We treat 'description' as the channel query now
+  const { description } = req.body;
+  if (!description) return res.status(400).json({ error: 'Missing query' });
+
+  console.log('[Discover] analyzing channel:', description);
+
+  try {
+    // STEP 1: Ground Truth Search via yt-dlp
+    // We search for 1 result to confirm the channel identity and get context
+    console.log('[Discover] Running yt-dlp search...');
+    const searchRes = await ytDlp(`ytsearch1:${description}`, {
+      dumpSingleJson: true,
+      flatPlaylist: true
+    });
+
+    const entry = searchRes.entries ? searchRes.entries[0] : null;
+
+    let context = "";
+    let targetChannel = null;
+
+    if (entry) {
+      targetChannel = {
+        name: entry.channel || entry.uploader,
+        handle: entry.uploader_url ? ('@' + entry.uploader_id) : null, // Best effort handle
+        url: entry.uploader_url || entry.channel_url
+      };
+      context = `The user searched for "${description}".I found a top result from the channel "${targetChannel.name}" titled "${entry.title}".`;
+      console.log('[Discover] Context found:', context);
+    } else {
+      console.log('[Discover] No yt-dlp result found. Relying on AI pure guess.');
+      context = `The user searched for "${description}" but I couldn't find a direct match.`;
+      targetChannel = { name: description, handle: '?' };
+    }
+
+    // STEP 2: AI Brainstorming with Context & Verification
+    const model = genAI.getGenerativeModel({ model: MODEL_NAME });
+    const prompt = `
+            Act as a YouTube strategist.
+            
+            User's Search: "${description}"
+            Tech Search Result: Found a video by channel "${targetChannel.name}" titled "${entry ? entry.title : 'N/A'}" (Handle: ${targetChannel.handle || 'N/A'}).
+
+            Task:
+            1. **VERIFY**: Is "${targetChannel.name}" likely the specific channel the user was looking for? 
+               - If YES (e.g. User="MKBHD", Found="Marques Brownlee"), use the Tech Result metadata.
+               - If NO (e.g. User="MrBeast", Found="MrBeast Fan Account" or "News about MrBeast"), then **CORRECT IT** using your own knowledge of the official channel.
+            
+            2. **COMPETITORS**: List 10 DIRECT competitor channels (similar niche, audience, and size) for the *Corrected* Target.
+               - **Genre Rule**: If the channel is True Crime/Mystery (e.g. Mysterious7), prioritize True Crime/Mystery suggestions (e.g. EWU, Dr Insanity).
+
+            Return ONLY raw JSON in this format:
+            {
+                "final_target": {
+                    "name": "The Official Channel Name",
+                    "handle": "@OfficialHandle",
+                    "reason": "Why you chose this (e.g. 'Search result was correct' or 'Corrected reaction channel')"
+                },
+                "similar_channels": [
+                    { "name": "Competitor 1", "handle": "@Handle" },
+                    { "name": "Competitor 2", "handle": "@Handle" },
+                    ...
+                ]
+            }
+        `;
+
+    const result = await model.generateContent(prompt);
+    let responseText = result.response.text();
+
+    console.log('[Discover] Raw AI response:', responseText);
+
+    // Robust JSON extraction
+    let finalData = {};
+    try {
+      responseText = responseText.replace(/```json/g, '').replace(/```/g, '');
+      const firstOpen = responseText.indexOf('{');
+      const lastClose = responseText.lastIndexOf('}');
+      if (firstOpen !== -1 && lastClose !== -1) {
+        responseText = responseText.substring(firstOpen, lastClose + 1);
+      }
+      finalData = JSON.parse(responseText);
+    } catch (parseErr) {
+      console.error('[Discover] JSON Parse Error:', parseErr);
+    }
+
+    // Return refined result
+    // Use AI's final_target if valid, else fall back to search result
+    const definitiveTarget = (finalData.final_target && finalData.final_target.name)
+      ? finalData.final_target
+      : targetChannel;
+
+    res.json({
+      target_channel: definitiveTarget,
+      similar_channels: finalData.similar_channels || []
+    });
+
+  } catch (err) {
+    console.error('[Discover] Error:', err);
+    res.status(500).json({ error: 'Discovery failed: ' + err.message });
+  }
+});
+
 // --- /api/generate: main Gemini call ---
 app.post('/api/generate', async (req, res) => {
   const ticketId = typeof req.query.qid === 'string' ? req.query.qid : null;
@@ -1087,7 +1540,8 @@ app.post('/api/generate', async (req, res) => {
 
     let result;
     try {
-      result = await chat.sendMessage(finalInstruction);
+      // WRAPPED IN RETRY
+      result = await runWithRetry(() => chat.sendMessage(finalInstruction), 3, 3000);
     } catch (err) {
       console.error('Gemini generateContent error:', err);
       throw new Error('Gemini API generateContent failed');
@@ -1100,10 +1554,43 @@ app.post('/api/generate', async (req, res) => {
 
     update(90, 'Saving to history…');
 
+    // Extract Summary for history list (More robust: Get everything before first Package)
+    let extractedSummary = null;
+    try {
+      const split = html.split(/<h[1-6][^>]*>Package/i);
+      if (split.length > 1) {
+        let rawPre = split[0];
+        // Remove Headers (e.g. "Video Summary") entirely
+        rawPre = rawPre.replace(/<h[1-6][^>]*>.*?<\/h[1-6]>/gi, '');
+        // Remove remaining tags
+        const cleanText = rawPre.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        if (cleanText.length > 10) {
+          // Take approx 2 sentences or 200 chars
+          extractedSummary = cleanText.slice(0, 200).trim();
+          if (extractedSummary.length === 200) extractedSummary += '...';
+        }
+      }
+      console.log('[SUMMARY] Extracted:', extractedSummary);
+    } catch (e) { console.error('[SUMMARY] Extraction error:', e); }
+
     const saved = await historyStore.save(html, {
       title: displayName || videoSource || 'Untitled',
+      summary: extractedSummary,
       videoSource: videoSource || fileUri || null,
-      playback
+      playback,
+      // Store generation context for regeneration
+      generationContext: {
+        fileUri,
+        fileMime,
+        videoSource,
+        displayName,
+        topic,
+        titleHint,
+        angleHint,
+        contextText,
+        strategistPrompt,
+        playback // Save playback in context for easy restoration
+      }
     });
 
     update(98, 'Finalizing…');
@@ -1259,7 +1746,8 @@ app.post('/api/regenerate-card', async (req, res) => {
 
     let result;
     try {
-      result = await chat.sendMessage(finalInstruction);
+      // WRAPPED IN RETRY
+      result = await runWithRetry(() => chat.sendMessage(finalInstruction), 3, 3000);
     } catch (err) {
       const msg = `Gemini regenerate error: ${err.message} \nStack: ${err.stack}`;
       console.error(msg);
@@ -1371,7 +1859,12 @@ app.get('/api/history/:id/html', async (req, res) => {
       </style>
     `;
 
-    const cleanHtml = normalizeHtmlServer(html || '');
+    let cleanHtml = normalizeHtmlServer(html || '');
+
+    // Remove interactive buttons for share view
+    cleanHtml = cleanHtml.replace(/<button[^>]*class="[^"]*\bregen-btn\b[^"]*"[^>]*>.*?<\/button>/gs, '');
+    cleanHtml = cleanHtml.replace(/<button[^>]*class="[^"]*\bdownload-btn\b[^"]*"[^>]*>.*?<\/button>/gs, '');
+    cleanHtml = cleanHtml.replace(/<button[^>]*class="[^"]*\bghost\b[^"]*"[^>]*>.*?<\/button>/gs, '');
 
     // JavaScript for timestamp functionality
     const timestampScript = `
@@ -1499,6 +1992,18 @@ app.get('/api/history/:id/html', async (req, res) => {
     </div>
   </div>
   ${timestampScript}
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // HIDE Strategy and Gold Standard References
+      const ps = document.querySelectorAll('.output p');
+      ps.forEach(p => {
+         const html = p.innerHTML || '';
+         if (html.includes('<strong>Strategy:</strong>') || html.includes('<strong>Gold Standard References:</strong>')) {
+            p.style.display = 'none';
+         }
+      });
+    });
+  </script>
 </body>
 </html>`;
 
@@ -1520,6 +2025,84 @@ app.patch('/api/history/:id', async (req, res) => {
   } catch (err) {
     console.error('history rename error:', err);
     res.status(500).json({ error: 'History rename failed' });
+  }
+});
+
+app.post('/api/history/:id/append', async (req, res) => {
+  try {
+    const { html } = req.body;
+    if (!html) return res.status(400).json({ error: 'Missing html' });
+    const ok = await historyStore.appendHtml(req.params.id, html);
+    if (!ok) return res.status(404).json({ error: 'Not found or failed' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('history append error:', err);
+    res.status(500).json({ error: 'History append failed' });
+  }
+});
+
+// Create new history item (for Custom Cards)
+app.post('/api/history/create', async (req, res) => {
+  try {
+    const { html, meta } = req.body;
+    if (!html || !meta) return res.status(400).json({ error: 'Missing html or meta' });
+
+    // Validate meta
+    const safeMeta = {
+      ...meta,
+      created_at: Date.now()
+    };
+
+    const saved = await historyStore.save(html, safeMeta);
+    res.json(saved);
+  } catch (err) {
+    console.error('history create error:', err);
+    res.status(500).json({ error: 'History create failed' });
+  }
+});
+
+// Update history HTML (for regenerated packages)
+app.post('/api/history/:id/update-html', async (req, res) => {
+  try {
+    const { html } = req.body;
+    if (!html) return res.status(400).json({ error: 'Missing html' });
+
+    const id = req.params.id;
+    const item = await historyStore.get(id);
+    if (!item) return res.status(404).json({ error: 'History item not found' });
+
+    // Update HTML while preserving metadata
+    const updated = await historyStore.save(html, {
+      title: item.meta?.title || 'Untitled',
+      videoSource: item.meta?.videoSource || null,
+      playback: item.meta?.playback || null,
+      generationContext: item.meta?.generationContext || null
+    });
+
+    // Delete old item and replace with updated one
+    await historyStore.delete(id);
+
+    console.log(`Updated history item ${id} HTML`);
+    res.json({ ok: true, newId: updated.meta.id });
+  } catch (err) {
+    console.error('history update html error:', err);
+    res.status(500).json({ error: 'History update failed' });
+  }
+});
+
+// Update content IN-PLACE (preserves ID)
+app.post('/api/history/:id/update-content', async (req, res) => {
+  try {
+    const { html } = req.body;
+    if (!html) return res.status(400).json({ error: 'Missing html' });
+
+    const ok = await historyStore.updateHtml(req.params.id, html);
+    if (!ok) return res.status(404).json({ error: 'Not found or failed' });
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('history inplace update error:', err);
+    res.status(500).json({ error: 'History update failed' });
   }
 });
 
