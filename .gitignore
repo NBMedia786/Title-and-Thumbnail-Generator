@@ -12,3 +12,6 @@ Thumbs.db
 .DS_Store
 # Ignore yt-dlp authentication file
 assets/deployment_cookies.txt
+
+# Ignore generated player scripts (may contain API keys)
+*-player-script.js
