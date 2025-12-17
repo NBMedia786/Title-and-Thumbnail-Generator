@@ -40,6 +40,9 @@ const ytDlp = (url, options = {}) => {
   return ytDlpRaw(url, mergedOptions);
 };
 
+// Expose the .exec method for streaming support (used in thumbnail proxy)
+ytDlp.exec = ytDlpRaw.exec;
+
 // --- ESM helpers ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

@@ -269,7 +269,7 @@ function seekYouTube(seconds) {
     const yti = els.ytPreview;
     if (!yti || !yti.contentWindow) return;
     yti.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [seconds, true] }), '*');
-    yti.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*');
+    yti.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*');
 }
 async function seekTo(seconds) {
     const done = await seekLocal(seconds);

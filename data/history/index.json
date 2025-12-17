@@ -621,6 +621,56 @@
       "angle": "",
       "prompt": "Default Prompt",
       "preview": "<p><strong>Video Summary & Core Angles:</strong> The video details the case of Tara Lambert, who conspires with her friend Geanie Cheadle to hire a hitman to kill her husband's ex-wife, Kellie Cooke. Unbeknownst to Tara, her friend went to "
+    },
+    {
+      "id": "0ea41fca-ddc7-4b97-a4cb-7dd4865230fe",
+      "title": "YouTube: https://youtu.be/Bp91g5fmdTI?si=Iha14575yenqxzkx",
+      "summary": "Video Summary & Core Angles: The video documents the investigation into what initially appears to be a hit-and-run accident. Through witness interviews, police uncover a story of jealousy and rage inv...",
+      "created_at": 1765948457267,
+      "size_bytes": 8318,
+      "file_path": "C:\\Users\\pc\\Documents\\Title(V2 updates )\\data\\history\\0ea41fca-ddc7-4b97-a4cb-7dd4865230fe.json.gz",
+      "videoSource": "YouTube: https://youtu.be/Bp91g5fmdTI?si=Iha14575yenqxzkx",
+      "playback": {
+        "kind": "youtube",
+        "url": "https://youtu.be/Bp91g5fmdTI?si=Iha14575yenqxzkx",
+        "youtubeId": "Bp91g5fmdTI"
+      },
+      "angle": "",
+      "prompt": "Default Prompt",
+      "preview": "<p><strong>Video Summary & Core Angles:</strong> The video documents the investigation into what initially appears to be a hit-and-run accident. Through witness interviews, police uncover a story of jealousy and rage involving the victim (C"
+    },
+    {
+      "id": "689272de-c4f2-4662-a355-3d4291b769d9",
+      "title": "YouTube: https://youtu.be/Bp91g5fmdTI?si=BGhE7BkbWqTVs2fO",
+      "summary": "Video Summary & Core Angles: The video details the investigation into what initially appears to be a hit-and-run accident. Bodycam footage reveals witness testimony that quickly turns the case into a",
+      "created_at": 1765948830145,
+      "size_bytes": 7881,
+      "file_path": "C:\\Users\\pc\\Documents\\Title(V2 updates )\\data\\history\\689272de-c4f2-4662-a355-3d4291b769d9.json.gz",
+      "videoSource": "YouTube: https://youtu.be/Bp91g5fmdTI?si=BGhE7BkbWqTVs2fO",
+      "playback": {
+        "kind": "youtube",
+        "url": "https://youtu.be/Bp91g5fmdTI?si=BGhE7BkbWqTVs2fO",
+        "youtubeId": "Bp91g5fmdTI"
+      },
+      "angle": "",
+      "prompt": "Default Prompt",
+      "preview": "<p><strong>Video Summary & Core Angles:</strong> The video details the investigation into what initially appears to be a hit-and-run accident. Bodycam footage reveals witness testimony that quickly turns the case into a homicide investigati"
+    },
+    {
+      "id": "8c90399b-9789-4110-8851-a4fff1806e8d",
+      "title": "Local: Ahmad Shad 24.mp4",
+      "summary": "Video Summary & Core Angles: The video documents the investigation into the murder of Ahmad Laster, who was shot in his driveway. The core of the story revolves around police using CCTV footage and fa...",
+      "created_at": 1765949608892,
+      "size_bytes": 8491,
+      "file_path": "C:\\Users\\pc\\Documents\\Title(V2 updates )\\data\\history\\8c90399b-9789-4110-8851-a4fff1806e8d.json.gz",
+      "videoSource": "Local: Ahmad Shad 24.mp4",
+      "playback": {
+        "kind": "local",
+        "url": "/uploads/upload_1765949331602_Ahmad_Shad_24.mp4"
+      },
+      "angle": "",
+      "prompt": "Default Prompt",
+      "preview": "<p><strong>Video Summary & Core Angles:</strong> The video documents the investigation into the murder of Ahmad Laster, who was shot in his driveway. The core of the story revolves around police using CCTV footage and family testimony to id"
     }
   ]
 }
