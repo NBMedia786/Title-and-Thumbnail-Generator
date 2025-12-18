@@ -983,11 +983,43 @@ async function updateCardThumbnail(card) {
                 img = newImg; // Update reference
             }
 
-            // Use Proxy Endpoint
-            // We use the FULL YouTube URL from input (els.ytUrl.value)
+            // Try Proxy Endpoint first (for timestamp-specific frames)
             const videoUrl = els.ytUrl.value;
-            img.src = `${API_BASE}/api/proxy-youtube-frame?url=${encodeURIComponent(videoUrl)}&time=${sec}`;
-            card.dataset.thumbUrl = img.src;
+            const proxyUrl = `${API_BASE}/api/proxy-youtube-frame?url=${encodeURIComponent(videoUrl)}&time=${sec}`;
+
+            // Create a new Image object to test if proxy works
+            const testImg = new Image();
+
+            testImg.onload = function () {
+                // Proxy worked! Use timestamp-specific frame
+                console.log(`[Thumbnail] Using proxy endpoint for timestamp ${sec}s`);
+                img.src = proxyUrl;
+                card.dataset.thumbUrl = proxyUrl;
+            };
+
+            testImg.onerror = function () {
+                // Proxy failed (yt-dlp/ffmpeg not available), fall back to YouTube's native thumbnail
+                console.warn(`[Thumbnail] Proxy failed, falling back to YouTube thumbnail for video ${ytID}`);
+                const fallbackUrl = `https://img.youtube.com/vi/${ytID}/maxresdefault.jpg`;
+
+                // Test if maxresdefault exists (not all videos have it)
+                const fallbackImg = new Image();
+                fallbackImg.onload = function () {
+                    img.src = fallbackUrl;
+                    card.dataset.thumbUrl = fallbackUrl;
+                };
+                fallbackImg.onerror = function () {
+                    // maxresdefault doesn't exist, use hqdefault
+                    const hqUrl = `https://img.youtube.com/vi/${ytID}/hqdefault.jpg`;
+                    console.log(`[Thumbnail] Using hqdefault for video ${ytID}`);
+                    img.src = hqUrl;
+                    card.dataset.thumbUrl = hqUrl;
+                };
+                fallbackImg.src = fallbackUrl;
+            };
+
+            // Start the test
+            testImg.src = proxyUrl;
         }
     }
 }

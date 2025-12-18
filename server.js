@@ -1170,7 +1170,7 @@ app.get('/api/proxy-youtube-frame', async (req, res) => {
   if (!url) return res.status(400).send('Invalid YouTube URL');
 
   try {
-    console.log(`[Proxy] Fetching info for ${url} at ${time}s via yt-dlp pipe...`);
+    console.log(`[Proxy] Fetching frame for ${url} at ${time}s via yt-dlp pipe...`);
 
     // Use yt-dlp to download a small segment (5s) around the timestamp
     // This is much more reliable than ffmpeg seeking on remote URLs
@@ -1184,7 +1184,7 @@ app.get('/api/proxy-youtube-frame', async (req, res) => {
       quiet: true,
       noWarnings: true,
     }, {
-      stdio: ['ignore', 'pipe', 'ignore'] // We only want stdout
+      stdio: ['ignore', 'pipe', 'pipe'] // Capture stderr for better error messages
     });
 
     res.setHeader('Content-Type', 'image/jpeg');
@@ -1193,15 +1193,22 @@ app.get('/api/proxy-youtube-frame', async (req, res) => {
     // Hard timeout for the process to prevent hanging
     const timeout = setTimeout(() => {
       if (!ytProcess.killed) {
-        console.error('[Proxy] yt-dlp timeout');
+        console.error('[Proxy] yt-dlp timeout - killing process');
         ytProcess.kill();
         if (!res.headersSent) res.status(504).send('Gateway Timeout');
       }
     }, 15000); // 15s timeout
 
-    // Handle yt-dlp stderr manually to catch early failures
+    // Capture stderr for better error diagnostics
+    let stderrData = '';
     if (ytProcess.stderr) {
-      ytProcess.stderr.on('data', (d) => process.stdout.write(`[yt-dlp err] ${d}`));
+      ytProcess.stderr.on('data', (d) => {
+        stderrData += d.toString();
+        // Only log critical errors, not warnings
+        if (d.toString().toLowerCase().includes('error')) {
+          console.error(`[Proxy] yt-dlp error: ${d.toString().trim()}`);
+        }
+      });
     }
 
     // Pipe yt-dlp -> ffmpeg -> response
@@ -1218,14 +1225,30 @@ app.get('/api/proxy-youtube-frame', async (req, res) => {
         if (err.message.includes('pipe:0')) return;
         console.error('[Proxy] FFmpeg error:', err.message);
         ytProcess.kill();
-        if (!res.headersSent) res.status(500).end();
+        if (!res.headersSent) {
+          res.status(500).json({
+            error: 'Frame extraction failed',
+            details: err.message,
+            stderr: stderrData
+          });
+        }
       })
-      .on('end', () => clearTimeout(timeout))
+      .on('end', () => {
+        console.log(`[Proxy] Successfully extracted frame at ${time}s`);
+        clearTimeout(timeout);
+      })
       .pipe(res, { end: true });
 
   } catch (err) {
     console.error('[Proxy] Error:', err.message);
-    if (!res.headersSent) res.status(500).send('Generation failed');
+    console.error('[Proxy] Stack:', err.stack);
+    if (!res.headersSent) {
+      res.status(503).json({
+        error: 'Proxy service unavailable',
+        details: err.message,
+        hint: 'yt-dlp or ffmpeg may not be installed. Install with: sudo apt install ffmpeg && sudo pip3 install -U yt-dlp'
+      });
+    }
   }
 });
 

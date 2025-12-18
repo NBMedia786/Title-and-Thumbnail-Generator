@@ -671,6 +671,40 @@
       "angle": "",
       "prompt": "Default Prompt",
       "preview": "<p><strong>Video Summary & Core Angles:</strong> The video documents the investigation into the murder of Ahmad Laster, who was shot in his driveway. The core of the story revolves around police using CCTV footage and family testimony to id"
+    },
+    {
+      "id": "79af2e46-33b8-45cb-ac67-c128f971d9b2",
+      "title": "YouTube: https://youtu.be/6CSR0ZE8NnM?si=e7CVFVQt4QTqp4-H",
+      "summary": "Video Summary & Core Angles: The video details the investigation into the murder of Michael Agerter, who was shot in his garage. The primary suspect is his manipulative ex-girlfriend, Kathryn Sinkevit...",
+      "created_at": 1766034487096,
+      "size_bytes": 10625,
+      "file_path": "C:\\Users\\pc\\Documents\\Title(V2 updates )\\data\\history\\79af2e46-33b8-45cb-ac67-c128f971d9b2.json.gz",
+      "videoSource": "YouTube: https://youtu.be/6CSR0ZE8NnM?si=e7CVFVQt4QTqp4-H",
+      "playback": {
+        "kind": "youtube",
+        "url": "https://youtu.be/6CSR0ZE8NnM?si=e7CVFVQt4QTqp4-H",
+        "youtubeId": "6CSR0ZE8NnM"
+      },
+      "angle": "",
+      "prompt": "Default Prompt",
+      "preview": "<p><strong>Video Summary & Core Angles:</strong> The video details the investigation into the murder of Michael Agerter, who was shot in his garage. The primary suspect is his manipulative ex-girlfriend, Kathryn Sinkevitch, with the motive "
+    },
+    {
+      "id": "293db892-302e-490a-922e-8d18ec810d5e",
+      "title": "YouTube: https://youtu.be/If9Ytm6ZzH4?si=JgjIgA1DjDBtoUEd",
+      "summary": "Video Summary & Core Angles: The investigation begins with a missing person report for 69-year-old William Gray, which quickly escalates with rumors of his body being found in his car's trunk. Bodycam...",
+      "created_at": 1766035450273,
+      "size_bytes": 9997,
+      "file_path": "C:\\Users\\pc\\Documents\\Title(V2 updates )\\data\\history\\293db892-302e-490a-922e-8d18ec810d5e.json.gz",
+      "videoSource": "YouTube: https://youtu.be/If9Ytm6ZzH4?si=JgjIgA1DjDBtoUEd",
+      "playback": {
+        "kind": "youtube",
+        "url": "https://youtu.be/If9Ytm6ZzH4?si=JgjIgA1DjDBtoUEd",
+        "youtubeId": "If9Ytm6ZzH4"
+      },
+      "angle": "",
+      "prompt": "Default Prompt",
+      "preview": "<p><strong>Video Summary & Core Angles:</strong> The investigation begins with a missing person report for 69-year-old William Gray, which quickly escalates with rumors of his body being found in his car's trunk. Bodycam footage follows pol"
     }
   ]
 }
