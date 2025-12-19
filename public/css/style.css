@@ -245,6 +245,36 @@ input[type="text"]:focus {
   align-content: start;
 }
 
+/* Market Mode Wrapper - Denser "YouTube Homepage" Grid */
+/* Market Mode Wrapper - Denser "YouTube Homepage" Grid */
+.grid-container.market-mode {
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)) !important;
+  gap: 24px 12px !important;
+}
+
+/* Adjust card internals for smaller size */
+.grid-container.market-mode .video-card {
+  padding: 8px 8px 32px 8px;
+  /* Tighter padding */
+}
+
+.grid-container.market-mode .card-title {
+  font-size: 14px;
+  line-height: 20px;
+  margin-bottom: 2px;
+}
+
+.grid-container.market-mode .card-channel-name,
+.grid-container.market-mode .card-stats {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.grid-container.market-mode .channel-avatar {
+  width: 32px;
+  height: 32px;
+}
+
 /* Market Mode: Move custom card to end */
 .grid-container .custom-card {
   order: 9999;

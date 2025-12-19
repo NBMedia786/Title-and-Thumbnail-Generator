@@ -1239,6 +1239,12 @@ function showProgress(show) {
 // 1. Toggle Handler
 if (els.competitorToggle) {
     els.competitorToggle.addEventListener('change', (e) => {
+        // 1. Toggle Visual Mode (Smaller Grid)
+        const isChecked = e.target.checked;
+        console.log('[Market Mode] Toggled:', isChecked);
+        if (els.output) els.output.classList.toggle('market-mode', isChecked);
+        if (els.historyDetailView) els.historyDetailView.classList.toggle('market-mode', isChecked);
+
         if (e.target.checked) {
             // Open Modal
             els.competitorModal.style.display = 'grid';
@@ -1250,6 +1256,15 @@ if (els.competitorToggle) {
             document.querySelectorAll('.video-card.competitor').forEach(el => el.remove());
         }
     });
+
+    // Initialize state on load (in case browser remembers checked state)
+    if (els.competitorToggle.checked) {
+        console.log('[Market Mode] Initializing: ON');
+        if (els.output) els.output.classList.add('market-mode');
+        if (els.historyDetailView) els.historyDetailView.classList.add('market-mode');
+    } else {
+        console.log('[Market Mode] Initializing: OFF');
+    }
 }
 
 // 2. Modal Controls
